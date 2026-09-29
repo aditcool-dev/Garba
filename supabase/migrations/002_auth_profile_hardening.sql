@@ -1,5 +1,15 @@
 -- Apply this migration in the Supabase SQL Editor after 001_init.sql.
 -- The client cannot enforce OAuth domain or profile creation safely by itself.
+-- This file is safe to run against the already-created schema; it does not
+-- drop tables or delete users. Do not re-run 001_init.sql for this step.
+
+do $$
+begin
+  create type public.gender_label as enum ('Woman', 'Man', 'Non-binary', 'Prefer not to say');
+exception
+  when duplicate_object then null;
+end;
+$$;
 
 create or replace function public.assert_bmsce_email()
 returns trigger
