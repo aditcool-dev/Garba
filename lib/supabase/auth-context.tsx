@@ -19,7 +19,7 @@ interface AuthContextType {
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signInWithOtp: (email: string) => Promise<{ error: string | null; message?: string }>;
   signUpWithPassword: (email: string, password: string, firstName: string) => Promise<{ error: string | null; message?: string }>;
-  signInWithPassword: (email: string, password: string) => Promise<{ error: string | null }>;
+  signInWithPassword: (email: string, password: string) => Promise<{ error: string | null; onboardingComplete?: boolean }>;
   demoLogin: (email?: string, name?: string) => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -114,7 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { data, error } = await client.auth.signInWithOAuth({
           provider: "google",
           options: {
-            redirectTo: typeof window !== "undefined" ? `${window.location.origin}/discover` : undefined,
+            redirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback?next=/discover` : undefined,
           },
         });
         if (error) {
@@ -149,7 +149,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { error } = await client.auth.signInWithOtp({
         email: trimmed,
         options: {
-          emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/discover` : undefined,
+          emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback?next=/discover` : undefined,
         },
       });
       if (error) return { error: error.message };
@@ -206,7 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           is_hidden: false,
           is_suspended: false,
           is_banned: false,
-          onboarding_complete: true,
+          onboarding_complete: false,
           is_demo: false,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
@@ -238,7 +238,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signInWithPassword = async (
     email: string,
     password: string
-  ): Promise<{ error: string | null }> => {
+  ): Promise<{ error: string | null; onboardingComplete?: boolean }> => {
     const trimmed = email.trim().toLowerCase();
     const client = getSupabaseClient();
     if (client) {
@@ -259,6 +259,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: error.message };
       }
       if (data?.user) {
+        if (!isAllowedEmail(data.user.email || trimmed)) {
+          await client.auth.signOut();
+          return { error: "Only verified @bmsce.ac.in accounts can use GarbaMate." };
+        }
         const u = { id: data.user.id, email: data.user.email || trimmed };
         setUser(u);
         localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(u));
@@ -282,7 +286,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             is_hidden: false,
             is_suspended: false,
             is_banned: false,
-            onboarding_complete: true,
+            onboarding_complete: false,
             is_demo: false,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
@@ -291,8 +295,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           p = newProfile;
         }
         setProfile(p);
+        return { error: null, onboardingComplete: Boolean(p?.onboarding_complete) };
       }
-      return { error: null };
+      return { error: null, onboardingComplete: false };
     }
     return { error: "Database not connected." };
   };
