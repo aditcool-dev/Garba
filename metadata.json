@@ -1,0 +1,8 @@
+{
+  "name": "GarbaMate",
+  "description": "A safe BMSCE campus partner finder for Navratri.",
+  "permissions": [],
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

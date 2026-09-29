@@ -1,4 +1,132 @@
+"use client";
+
 import Link from "next/link";
 import { Button, Card, Badge } from "@/components/ui";
 import { FESTIVAL } from "@/config/festival";
-export default function Home() { return <main className="mandala min-h-screen overflow-hidden"><div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-between px-6 py-7"><header className="flex items-center justify-between"><div className="text-xl font-black">🪩 <span className="text-[#ffd166]">Garba</span>Mate</div><Link href="/login" className="text-sm text-[#ffd166]">Sign in</Link></header><section className="grid items-center gap-10 py-12 md:grid-cols-[1.1fr_.9fr] md:py-20"><div><Badge className="bg-[#f35ca8]/20 text-[#ff9fcf]">BMSCE Navratri 2026</Badge><h1 className="mt-5 text-5xl font-black leading-[1.02] md:text-7xl">Find your<br /><span className="bg-gradient-to-r from-[#ffd166] via-[#ff8b4d] to-[#f35ca8] bg-clip-text text-transparent">Garba partner.</span></h1><p className="mt-6 max-w-xl text-lg leading-8 text-[#c5c9e8]">Meet BMSCE students who match your nights, style, and energy. Match. Meet safely. Garba. Repeat.</p><div className="mt-8 flex flex-wrap gap-3"><Link href="/signup"><Button>Create profile</Button></Link><Link href="/discover"><Button variant="secondary">Explore profiles</Button></Link></div><div className="mt-8 flex gap-6 text-sm text-[#aab0d0]"><span>🔒 College-only</span><span>🛡️ Safety-first</span></div></div><Card className="relative overflow-hidden border-[#ffd166]/20 p-7"><div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-[#f35ca8]/20 blur-3xl" /><p className="text-sm text-[#aab0d0]">The floor is calling</p><h2 className="mt-2 text-3xl font-black">{FESTIVAL.name} starts soon 🕺</h2><div className="mt-7 grid grid-cols-3 gap-3 text-center"><div className="rounded-2xl bg-white/5 p-4"><b className="text-3xl text-[#ffd166]">9</b><p className="mt-1 text-xs text-[#aab0d0]">nights</p></div><div className="rounded-2xl bg-white/5 p-4"><b className="text-3xl text-[#ff8b4d]">∞</b><p className="mt-1 text-xs text-[#aab0d0]">new vibes</p></div><div className="rounded-2xl bg-white/5 p-4"><b className="text-3xl text-[#f35ca8]">1</b><p className="mt-1 text-xs text-[#aab0d0]">community</p></div></div><p className="mt-7 text-sm leading-6 text-[#c5c9e8]">No awkward guessing. See shared nights, styles, interests, and a fun compatibility score.</p></Card></section><section className="grid gap-4 pb-6 text-center md:grid-cols-3"><div><div className="text-2xl">✨</div><h3 className="mt-2 font-bold">Build your vibe</h3><p className="mt-1 text-sm text-[#aab0d0]">Show your style, nights, and interests.</p></div><div><div className="text-2xl">❤️</div><h3 className="mt-2 font-bold">Find your people</h3><p className="mt-1 text-sm text-[#aab0d0]">Discover partners and groups at BMSCE.</p></div><div><div className="text-2xl">🪩</div><h3 className="mt-2 font-bold">Meet safely</h3><p className="mt-1 text-sm text-[#aab0d0]">Chat in-app and meet at the official event.</p></div></section></div></main>; }
+import { useAuth } from "@/lib/supabase/auth-context";
+
+export default function Home() {
+  const { user, isConfigured, demoLogin } = useAuth();
+
+  return (
+    <main className="mandala min-h-screen overflow-hidden">
+      <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-between px-6 py-7">
+        <header className="flex items-center justify-between border-b border-white/5 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="text-xl font-black">
+              🪩 <span className="text-[#ffd166]">Garba</span>Mate
+            </div>
+            <span className="hidden sm:inline-block rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] font-medium text-[#aab0d0] border border-white/10">
+              {isConfigured ? "Supabase Connected" : "Demo Mode"}
+            </span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <Link href="/admin" className="text-xs text-[#aab0d0] hover:text-white">
+              Admin & RLS
+            </Link>
+            {user ? (
+              <Link href="/discover">
+                <Button className="min-h-9 px-4 text-xs font-bold">Open Discover →</Button>
+              </Link>
+            ) : (
+              <div className="flex items-center gap-2">
+                <Link href="/login" className="text-sm font-semibold text-[#ffd166]">
+                  Sign in
+                </Link>
+              </div>
+            )}
+          </div>
+        </header>
+
+        <section className="grid items-center gap-10 py-12 md:grid-cols-[1.1fr_.9fr] md:py-20">
+          <div>
+            <Badge className="bg-[#f35ca8]/20 text-[#ff9fcf] border border-[#f35ca8]/30">
+              BMSCE Navratri 2026
+            </Badge>
+            <h1 className="mt-5 text-5xl font-black leading-[1.02] md:text-7xl">
+              Find your
+              <br />
+              <span className="bg-gradient-to-r from-[#ffd166] via-[#ff8b4d] to-[#f35ca8] bg-clip-text text-transparent">
+                Garba partner.
+              </span>
+            </h1>
+            <p className="mt-6 max-w-xl text-lg leading-8 text-[#c5c9e8]">
+              Meet BMSCE students who match your nights, style, and energy. Connect safely with college-verified peers. Match. Meet safely. Garba. Repeat.
+            </p>
+
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link href="/signup">
+                <Button>Create profile</Button>
+              </Link>
+              <Link href="/discover">
+                <Button variant="secondary">Explore profiles</Button>
+              </Link>
+            </div>
+
+            <div className="mt-8 flex flex-wrap items-center gap-6 text-sm text-[#aab0d0]">
+              <span className="flex items-center gap-1.5">
+                <span>🔒</span> College-only verified access
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span>🛡️</span> Profiles locked to guests
+              </span>
+              <span className="flex items-center gap-1.5">
+                <span>⚡</span> Real-time chat & matches
+              </span>
+            </div>
+          </div>
+
+          <Card className="relative overflow-hidden border-[#ffd166]/20 p-7 bg-gradient-to-br from-[#161a3d] to-[#0c0f26]">
+            <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-[#f35ca8]/20 blur-3xl" />
+            <p className="text-xs uppercase tracking-wider font-bold text-[#ffd166]">The floor is calling</p>
+            <h2 className="mt-2 text-3xl font-black">{FESTIVAL.name} starts soon 🕺</h2>
+
+            <div className="mt-7 grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-2xl bg-white/5 p-4 border border-white/5">
+                <b className="text-3xl text-[#ffd166]">9</b>
+                <p className="mt-1 text-xs text-[#aab0d0]">nights</p>
+              </div>
+              <div className="rounded-2xl bg-white/5 p-4 border border-white/5">
+                <b className="text-3xl text-[#ff8b4d]">∞</b>
+                <p className="mt-1 text-xs text-[#aab0d0]">new vibes</p>
+              </div>
+              <div className="rounded-2xl bg-white/5 p-4 border border-white/5">
+                <b className="text-3xl text-[#f35ca8]">1</b>
+                <p className="mt-1 text-xs text-[#aab0d0]">community</p>
+              </div>
+            </div>
+
+            <div className="mt-6 rounded-2xl bg-black/30 p-4 border border-white/10 text-xs text-[#c5c9e8] leading-5">
+              💡 <b>Privacy First:</b> Anonymous guests only see locked student avatars. To view full photos, bios, and message dancers, you must sign in with your BMSCE college email.
+            </div>
+          </Card>
+        </section>
+
+        <section className="grid gap-4 pb-6 text-center md:grid-cols-3">
+          <div className="rounded-2xl bg-white/5 p-5 border border-white/5">
+            <div className="text-3xl">✨</div>
+            <h3 className="mt-2 font-bold text-white">Build your vibe</h3>
+            <p className="mt-1 text-xs text-[#aab0d0]">
+              Choose your avatar, favourite styles, and attending nights.
+            </p>
+          </div>
+          <div className="rounded-2xl bg-white/5 p-5 border border-white/5">
+            <div className="text-3xl">🔒</div>
+            <h3 className="mt-2 font-bold text-white">Protected Discovery</h3>
+            <p className="mt-1 text-xs text-[#aab0d0]">
+              Full profiles and photos are locked until you sign in with BMSCE.
+            </p>
+          </div>
+          <div className="rounded-2xl bg-white/5 p-5 border border-white/5">
+            <div className="text-3xl">💬</div>
+            <h3 className="mt-2 font-bold text-white">Realtime Chat</h3>
+            <p className="mt-1 text-xs text-[#aab0d0]">
+              Coordinate matching outfits and practice 3-taali spins in-app.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}

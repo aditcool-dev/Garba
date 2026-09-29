@@ -14,3 +14,59 @@ create index on likes(to_user); create index on matches(user_a); create index on
 alter table profiles enable row level security; alter table likes enable row level security; alter table passes enable row level security; alter table matches enable row level security; alter table messages enable row level security; alter table blocks enable row level security; alter table reports enable row level security; alter table admin_users enable row level security; alter table audit_log enable row level security;
 create policy "own profile" on profiles for all using (id=auth.uid()) with check (id=auth.uid()); create policy "safe discovery" on profiles for select using (onboarding_complete and not is_hidden and not is_suspended and not is_banned); create policy "own likes" on likes for all using (from_user=auth.uid()) with check(from_user=auth.uid()); create policy "own passes" on passes for all using (from_user=auth.uid()) with check(from_user=auth.uid()); create policy "match participant" on matches for select using (user_a=auth.uid() or user_b=auth.uid()); create policy "message participant" on messages for select using (exists(select 1 from matches m where m.id=match_id and (m.user_a=auth.uid() or m.user_b=auth.uid()) and m.status='active')); create policy "message sender" on messages for insert with check(sender_id=auth.uid()); create policy "own blocks" on blocks for all using(blocker_id=auth.uid()) with check(blocker_id=auth.uid()); create policy "own reports" on reports for insert with check(reporter_id=auth.uid()); create policy "admin only" on admin_users for select using(user_id=auth.uid());
 create or replace function like_user(target uuid, kind like_kind default 'interested') returns jsonb language plpgsql security definer set search_path=public as $$ declare a uuid:=auth.uid(); low uuid; high uuid; match_id uuid; begin if a is null or a=target then raise exception 'invalid target'; end if; if exists(select 1 from blocks where (blocker_id=a and blocked_id=target) or (blocker_id=target and blocked_id=a)) then raise exception 'blocked'; end if; insert into likes(from_user,to_user,kind) values(a,target,kind) on conflict(from_user,to_user) do nothing; if exists(select 1 from likes where from_user=target and to_user=a) then low:=least(a,target); high:=greatest(a,target); insert into matches(user_a,user_b) values(low,high) on conflict(user_a,user_b) do update set status='active' returning id into match_id; return jsonb_build_object('matched',true,'match_id',match_id); end if; return jsonb_build_object('matched',false,'match_id',null); end $$;
+
+-- Auto-create student profile trigger on new auth sign up
+create or replace function public.handle_new_user()
+returns trigger language plpgsql security definer set search_path = public as $$
+begin
+  insert into public.profiles (
+    id,
+    first_name,
+    age,
+    gender,
+    branch,
+    year,
+    bio,
+    experience,
+    styles,
+    looking_for,
+    available_nights,
+    interests,
+    partner_preference,
+    photo_path,
+    is_hidden,
+    is_suspended,
+    is_banned,
+    onboarding_complete,
+    is_demo
+  ) values (
+    new.id,
+    coalesce(new.raw_user_meta_data->>'first_name', split_part(new.email, '@', 1)),
+    20,
+    'Woman'::gender_label,
+    'CSE',
+    2,
+    'Excited for BMSCE Navratri Garba 2026!',
+    'Beginner',
+    array['Traditional Garba'],
+    array['Garba partner'],
+    array[1, 2, 3]::smallint[],
+    array['dance', 'music'],
+    'Everyone',
+    '💃',
+    false,
+    false,
+    false,
+    true,
+    false
+  )
+  on conflict (id) do nothing;
+  return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+create trigger on_auth_user_created
+  after insert on auth.users
+  for each row execute function public.handle_new_user();
+
