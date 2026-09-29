@@ -275,6 +275,21 @@ export const db = {
     return [];
   },
 
+  async getPublicProfileNames(): Promise<Pick<Profile, "id" | "first_name">[]> {
+    const client = getSupabaseClient();
+    if (!client) return [];
+    const { data, error } = await client.rpc("get_public_profile_names");
+    if (error || !data) return [];
+    return data as Pick<Profile, "id" | "first_name">[];
+  },
+
+  async isAdmin(userId: string): Promise<boolean> {
+    const client = getSupabaseClient();
+    if (!client) return false;
+    const { data, error } = await client.from("admin_users").select("user_id").eq("user_id", userId).maybeSingle();
+    return !error && Boolean(data);
+  },
+
   async getProfileById(id: string): Promise<Profile | null> {
     const client = getSupabaseClient();
     if (client) {

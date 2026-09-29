@@ -12,6 +12,7 @@ import type { Profile } from "@/lib/supabase/types";
 export default function Discover() {
   const { user, profile: myProfile, demoLogin } = useAuth();
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [publicNames, setPublicNames] = useState<Pick<Profile, "id" | "first_name">[]>([]);
   const [index, setIndex] = useState(0);
   const [matchPopup, setMatchPopup] = useState<{ person: Profile; matchId: string } | null>(null);
   const [showFilters, setShowFilters] = useState(false);
@@ -21,10 +22,13 @@ export default function Discover() {
 
   useEffect(() => {
     async function load() {
+      if (!user) {
+        setPublicNames(await db.getPublicProfileNames());
+        setProfiles([]);
+        return;
+      }
       const data = await db.getProfiles();
-      // Filter out own profile if logged in
-      const filtered = user ? data.filter((p) => p.id !== user.id) : data;
-      setProfiles(filtered);
+      setProfiles(data.filter((p) => p.id !== user.id));
     }
     load();
   }, [user]);
@@ -77,6 +81,19 @@ export default function Discover() {
   return (
     <AppShell title="Discover">
       <div className="mx-auto max-w-lg">
+        {!user && (
+          <Card className="mb-5 overflow-hidden border-[#ffd166]/30 bg-gradient-to-r from-[#21183e] to-[#172147] p-5">
+            <div className="flex items-start gap-3">
+              <span className="text-2xl">🔒</span>
+              <div>
+                <p className="text-xs font-bold uppercase tracking-[0.18em] text-[#ffd166]">Private campus discovery</p>
+                <h2 className="mt-1 text-xl font-black">Names first. Details after login.</h2>
+                <p className="mt-2 text-sm leading-6 text-[#c5c9e8]">Browse who is here by first name only. Sign in with your verified BMSCE account to unlock photos, profiles, matching, and chat.</p>
+                <Link href="/login"><Button className="mt-4 min-h-10 px-4 text-sm">Continue with Google</Button></Link>
+              </div>
+            </div>
+          </Card>
+        )}
         <div className="mb-5 flex items-end justify-between">
           <div>
             <p className="text-xs uppercase tracking-wider text-[#aab0d0]">Your campus partner finder</p>
@@ -174,8 +191,25 @@ export default function Discover() {
           </div>
         )}
 
-        {/* Discovery Card */}
-        {person ? (
+        {/* Guest name-only list. No profile object, photo, bio, or private field is loaded here. */}
+        {!user ? (
+          <Card className="p-4 sm:p-5">
+            <div className="mb-4 flex items-center justify-between">
+              <div><h2 className="text-lg font-black">BMSCE students on the floor</h2><p className="text-xs text-[#aab0d0]">First names only until you sign in</p></div>
+              <Badge className="bg-white/10 text-[#ffd166]">{publicNames.length || "—"} here</Badge>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {(publicNames.length ? publicNames : [{ id: "sample-1", first_name: "Aarav" }, { id: "sample-2", first_name: "Ananya" }, { id: "sample-3", first_name: "Sneha" }, { id: "sample-4", first_name: "Rohan" }]).map((entry) => (
+                <button key={entry.id} onClick={() => setLoginPrompt(true)} className="flex min-h-14 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-3 text-left transition hover:border-[#ffd166]/60 hover:bg-[#ffd166]/10">
+                  <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[#f35ca8]/30 to-[#ffd166]/20 text-sm font-black text-[#ffd166]">{entry.first_name.slice(0, 1)}</span>
+                  <span className="font-bold">{entry.first_name}</span>
+                  <span className="ml-auto text-[#73789e]">🔒</span>
+                </button>
+              ))}
+            </div>
+            <Button className="mt-5 w-full" onClick={() => setLoginPrompt(true)}>Sign in to discover properly →</Button>
+          </Card>
+        ) : person ? (
           <Card className="overflow-hidden p-0 border-white/10 shadow-2xl">
             {/* Avatar / Photo Area */}
             <div className="relative h-72 w-full overflow-hidden bg-gradient-to-br from-[#4b1d5c] via-[#2d2568] to-[#121c4b] flex items-center justify-center">

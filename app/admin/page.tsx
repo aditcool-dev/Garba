@@ -26,6 +26,8 @@ interface RlsTestResult {
 
 export default function AdminPage() {
   const { user, isConfigured } = useAuth();
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [checkingAccess, setCheckingAccess] = useState(true);
   const [reports, setReports] = useState<Report[]>([]);
   const [auditLogs, setAuditLogs] = useState<AuditLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -84,6 +86,17 @@ export default function AdminPage() {
   const [isRunningTests, setIsRunningTests] = useState(false);
 
   useEffect(() => {
+    if (!user) {
+      setCheckingAccess(false);
+      return;
+    }
+    db.isAdmin(user.id).then((allowed) => {
+      setIsAdmin(allowed);
+      setCheckingAccess(false);
+    });
+  }, [user]);
+
+  useEffect(() => {
     async function load() {
       setLoading(true);
       const rep = await db.getReports();
@@ -106,6 +119,9 @@ export default function AdminPage() {
     }
     load();
   }, []);
+
+  if (checkingAccess) return <main className="flex min-h-screen items-center justify-center text-[#aab0d0]">Checking admin access…</main>;
+  if (!user || !isAdmin) return <main className="flex min-h-screen items-center justify-center px-6 text-center"><div><div className="text-5xl">🔒</div><h1 className="mt-4 text-2xl font-black">Page not found</h1><p className="mt-2 text-sm text-[#aab0d0]">This area is restricted to approved GarbaMate administrators.</p><Link href="/" className="mt-5 inline-block text-[#ffd166]">Return home</Link></div></main>;
 
   const handleRunRlsTests = async () => {
     setIsRunningTests(true);

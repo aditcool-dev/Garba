@@ -29,11 +29,9 @@ export function AppShell({
         </div>
 
         <div className="flex items-center gap-2">
-          {/* Supabase status badge */}
-          <Link
-            href="/admin"
-            className="flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium bg-white/5 hover:bg-white/10 text-[#aab0d0] border border-white/5 transition"
-            title={isConfigured ? "Connected to Supabase" : "Demo Mode active. Click to view configuration & live RLS tests."}
+          <div
+            className="hidden sm:flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium bg-white/5 text-[#aab0d0] border border-white/5"
+            title={isConfigured ? "Connected to Supabase" : "Demo Mode active"}
           >
             <span
               className={`h-2 w-2 rounded-full ${
@@ -41,7 +39,7 @@ export function AppShell({
               }`}
             />
             <span>{isConfigured ? "Supabase Live" : "Demo Mode"}</span>
-          </Link>
+          </div>
 
           {user ? (
             <div className="flex items-center gap-2">

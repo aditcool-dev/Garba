@@ -22,9 +22,6 @@ export default function Home() {
           </div>
 
           <div className="flex items-center gap-3">
-            <Link href="/admin" className="text-xs text-[#aab0d0] hover:text-white">
-              Admin & RLS
-            </Link>
             {user ? (
               <Link href="/discover">
                 <Button className="min-h-9 px-4 text-xs font-bold">Open Discover →</Button>
