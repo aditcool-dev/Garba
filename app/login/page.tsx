@@ -23,8 +23,6 @@ export default function Login() {
     if (err) {
       setError(err);
       setLoading(false);
-    } else {
-      router.push("/discover");
     }
   };
 
@@ -35,12 +33,12 @@ export default function Login() {
     setError(null);
     setMessage(null);
 
-    const { error: err } = await signInWithPassword(email, password);
+    const { error: err, onboardingComplete } = await signInWithPassword(email, password);
     setLoading(false);
     if (err) {
       setError(err);
     } else {
-      router.push("/discover");
+      router.push(onboardingComplete ? "/discover" : "/onboarding");
     }
   };
 
@@ -56,10 +54,7 @@ export default function Login() {
     if (err) {
       setError(err);
     } else {
-      setMessage(msg || "Check your email for the magic link!");
-      setTimeout(() => {
-        router.push("/discover");
-      }, 1000);
+      setMessage(msg || "Check your email for the magic link. You will be redirected after verification.");
     }
   };
 

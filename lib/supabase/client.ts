@@ -9,15 +9,17 @@ if (typeof window !== "undefined") {
       localStorage.removeItem("garbamate_messages");
       sessionStorage.setItem("garbamate_cleaned_demo_v1", "true");
     }
-  } catch {}
+  } catch {
+    // Storage may be unavailable during server rendering; continue without cleanup.
+  }
 }
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Profile, Message, Match, Report, LikeKind, ReportReason } from "./types";
 
 export const SUPABASE_PROJECT_ID = "ywvyuciwggsurhupwrva";
-export const DEFAULT_SUPABASE_URL = "https://ywvyuciwggsurhupwrva.supabase.co";
-export const DEFAULT_SUPABASE_ANON_KEY = "sb_publishable_BJLbnb3753rA5_5JwzhCOQ_w75hCoXq";
+export const DEFAULT_SUPABASE_URL = "";
+export const DEFAULT_SUPABASE_ANON_KEY = "";
 
 export function getSupabaseUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;

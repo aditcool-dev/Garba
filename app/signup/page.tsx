@@ -24,8 +24,6 @@ export default function Signup() {
     if (err) {
       setError(err);
       setLoading(false);
-    } else {
-      router.push("/onboarding");
     }
   };
 
@@ -60,10 +58,7 @@ export default function Signup() {
     if (err) {
       setError(err);
     } else {
-      setMessage(msg || "Magic link sent! Check your inbox.");
-      setTimeout(() => {
-        router.push("/onboarding");
-      }, 1000);
+      setMessage(msg || "Magic link sent! Check your inbox. You will be redirected after verification.");
     }
   };
 
