@@ -1,5 +1,6 @@
 -- Messages must belong to an active, unblocked match. The client cannot bypass this.
 drop policy if exists "message sender" on public.messages;
+drop policy if exists "message sender in active match" on public.messages;
 create policy "message sender in active match" on public.messages
 for insert
 with check (
