@@ -1,0 +1,5 @@
+"use client";
+import { cn } from "@/lib/utils";
+export function Button({ className, variant = "primary", ...props }: React.ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "ghost" }) { return <button className={cn("min-h-11 rounded-full px-5 font-bold transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-[#ffd166]", variant === "primary" && "bg-gradient-to-r from-[#f35ca8] to-[#ff8b4d] text-white", variant === "secondary" && "bg-[#292d58] text-white", variant === "ghost" && "text-[#ffd166] hover:bg-white/10", className)} {...props} />; }
+export function Card({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) { return <div className={cn("rounded-3xl border border-white/10 bg-[#131735]/90 p-5 shadow-2xl shadow-black/20", className)} {...props} />; }
+export function Badge({ children, className }: { children: React.ReactNode; className?: string }) { return <span className={cn("inline-flex rounded-full bg-[#292d58] px-3 py-1 text-xs font-semibold text-[#e5e5ff]", className)}>{children}</span>; }

@@ -1,0 +1,2 @@
+import { Nav } from "./nav";
+export function AppShell({ children, title }: { children: React.ReactNode; title?: string }) { return <div className="min-h-screen pb-20 md:pb-8"><header className="mx-auto flex max-w-5xl items-center justify-between px-5 py-5"><a href="/" className="text-xl font-black tracking-tight">🪩 <span className="text-[#ffd166]">Garba</span>Mate</a>{title && <span className="text-sm text-[#aab0d0]">{title}</span>}</header><main className="mx-auto max-w-5xl px-5">{children}</main><Nav /></div>; }

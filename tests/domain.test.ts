@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest"; import { isAllowedEmail, parseCollegeEmail } from "@/lib/domain";
+describe("email safety", () => { it.each([["adit.cs24@bmsce.ac.in", true],["X@BMSCE.AC.IN", true],["x@cse.bmsce.ac.in", false],["x@evilbmsce.ac.in", false],["x@bmsce.ac.in.evil.com", false],["x@gmail.com", false],[" x@bmsce.ac.in ", true]])("checks %s", (email, expected) => expect(isAllowedEmail(email)).toBe(expected)); });
+describe("college prefix", () => { it("parses", () => expect(parseCollegeEmail("adit.cs24@bmsce.ac.in")).toEqual({ branch: "cs", admissionYear: 2024 })); it("fails safely", () => expect(parseCollegeEmail("student@bmsce.ac.in")).toEqual({ branch: "", admissionYear: null })); });

@@ -1,0 +1,3 @@
+import { describe, expect, it } from "vitest"; import { compatibilityScore } from "@/lib/scoring";
+const base = { myNights:[2,4], theirNights:[2,4], myStyles:["Any"], theirStyles:["Traditional Garba"], myYear:2, theirYear:2, myBranch:"CSE", theirBranch:"CSE", myInterests:["dance"], theirInterests:["dance"], myLookingFor:["Garba partner"], theirLookingFor:["Garba partner"] };
+describe("compatibility score", () => { it("handles identical compatible profiles", () => expect(compatibilityScore(base)).toBe(100)); it("handles empty sets", () => expect(compatibilityScore({ ...base, myNights:[], theirNights:[], myStyles:[], theirStyles:[], myInterests:[], theirInterests:[], myLookingFor:[], theirLookingFor:[] })).toBeGreaterThanOrEqual(0)); });

@@ -1,0 +1,8 @@
+@import "tailwindcss";
+
+:root { --navy: #090b24; --panel: #131735; --panel-2: #1b2043; --pink: #f35ca8; --orange: #ff8b4d; --gold: #ffd166; --muted: #aab0d0; }
+* { box-sizing: border-box; }
+body { margin: 0; background: radial-gradient(circle at 20% 0%, #30205c 0, transparent 36%), var(--navy); color: #f8f7ff; font-family: Arial, sans-serif; }
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
+.mandala { background-image: radial-gradient(circle at center, transparent 0 38%, rgba(255, 209, 102, .08) 39% 40%, transparent 41% 58%, rgba(243, 92, 168, .08) 59% 60%, transparent 61%); }
