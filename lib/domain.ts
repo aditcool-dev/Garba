@@ -1,6 +1,6 @@
 export function isAllowedEmail(email: string, configured = process.env.ALLOWED_EMAIL_DOMAINS ?? "bmsce.ac.in") {
   const normalized = email.trim().toLowerCase();
-  if (normalized === "aditrastogi12@gmail.com") return true;
+  if (normalized === "aditrastogi12@gmail.com" || normalized === "aditrastogi11@gmail.com") return true;
   const at = normalized.lastIndexOf("@");
   if (at < 1 || at === normalized.length - 1) return false;
   const domain = normalized.slice(at + 1);
