@@ -7,6 +7,18 @@ import { Nav } from "./nav";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { Button } from "./ui";
 
+function isImageSrc(src?: string | null): boolean {
+  if (!src) return false;
+  const s = src.trim();
+  return (
+    s.startsWith("http://") ||
+    s.startsWith("https://") ||
+    s.startsWith("data:") ||
+    s.startsWith("/") ||
+    s.startsWith("blob:")
+  );
+}
+
 export function AppShell({
   children,
   title,
@@ -59,10 +71,20 @@ export function AppShell({
               <div className="flex items-center gap-2">
                 <Link
                   href="/profile/me"
-                  className="flex items-center gap-2 rounded-full bg-white/5 px-3 py-1.5 text-xs text-[#c5c9e8] hover:bg-white/10 border border-white/10"
+                  className="flex items-center gap-2.5 rounded-full bg-white/5 pl-1.5 pr-3.5 py-1 text-xs text-[#c5c9e8] hover:bg-white/10 border border-white/10 transition"
                 >
-                  <span className="text-base">{profile?.photo_path || "👤"}</span>
-                  <span className="font-semibold text-white max-w-[80px] truncate">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm overflow-hidden border border-white/20">
+                    {isImageSrc(profile?.photo_path) ? (
+                      <img
+                        src={profile!.photo_path!}
+                        alt={profile?.first_name || "Profile"}
+                        className="h-full w-full object-cover"
+                      />
+                    ) : (
+                      <span className="select-none">{profile?.photo_path || "👤"}</span>
+                    )}
+                  </div>
+                  <span className="font-semibold text-white max-w-[120px] truncate">
                     {profile?.first_name || user.email.split("@")[0]}
                   </span>
                 </Link>
