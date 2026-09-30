@@ -113,15 +113,10 @@ export default function Settings() {
           </Card>
 
           <Card className="p-6 border-white/5">
-            <h2 className="font-bold text-sm text-[#aab0d0]">Security & System</h2>
+            <h2 className="font-bold text-sm text-[#aab0d0]">Campus Privacy & Security</h2>
             <p className="mt-2 text-xs text-[#73789e] leading-5">
-              GarbaMate enforces PostgreSQL Row Level Security (RLS) policies. Your raw email address, password hashes, and personal phone numbers are never exposed to other students.
+              GarbaMate enforces strict campus safety and PostgreSQL Row Level Security (RLS). Your raw email address, password hashes, and personal contact details are never exposed to other students.
             </p>
-            <div className="mt-4">
-              <Link href="/admin" className="text-xs text-[#ffd166] hover:underline">
-                View Live RLS Tests & Admin Safety Dashboard →
-              </Link>
-            </div>
           </Card>
         </div>
       </div>

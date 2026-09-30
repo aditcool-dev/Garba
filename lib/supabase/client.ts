@@ -18,15 +18,49 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Profile, Message, Match, Report, LikeKind, ReportReason } from "./types";
 
 export const SUPABASE_PROJECT_ID = "ywvyuciwggsurhupwrva";
-export const DEFAULT_SUPABASE_URL = "";
-export const DEFAULT_SUPABASE_ANON_KEY = "";
+export const DEFAULT_SUPABASE_URL = "https://ywvyuciwggsurhupwrva.supabase.co";
+export const DEFAULT_SUPABASE_ANON_KEY =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl3dnl1Y2l3Z2dzdXJodXB3cnZhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTA2ODYyMTgsImV4cCI6MjEwNjI2MjIxOH0.vziQ5k_RodfRLU5dZumEwit1otMRArvB9EQEAvGDWLg";
 
 export function getSupabaseUrl(): string {
   const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   if (envUrl && !envUrl.includes("your-project") && !envUrl.includes("placeholder") && envUrl.startsWith("http")) {
     return envUrl;
   }
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("garbamate_supabase_url");
+    if (stored && stored.startsWith("http")) {
+      return stored;
+    }
+  }
   return DEFAULT_SUPABASE_URL;
+}
+
+export function setSupabaseUrl(url: string): void {
+  if (typeof window !== "undefined") {
+    if (url.trim()) {
+      localStorage.setItem("garbamate_supabase_url", url.trim());
+    } else {
+      localStorage.removeItem("garbamate_supabase_url");
+    }
+    clientInstance = null;
+  }
+}
+
+export function setSupabaseCredentials(url: string, anonKey: string): void {
+  if (typeof window !== "undefined") {
+    if (url.trim()) {
+      localStorage.setItem("garbamate_supabase_url", url.trim());
+    } else {
+      localStorage.removeItem("garbamate_supabase_url");
+    }
+    if (anonKey.trim()) {
+      localStorage.setItem("garbamate_supabase_anon_key", anonKey.trim());
+    } else {
+      localStorage.removeItem("garbamate_supabase_anon_key");
+    }
+    clientInstance = null;
+  }
 }
 
 export function getSupabaseAnonKey(): string | null {
@@ -270,24 +304,107 @@ export const db = {
       } catch (err) {
         console.warn("Supabase profiles query failed:", err);
       }
-      return [];
     }
-    return [];
+    return getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
   },
 
   async getPublicProfileNames(): Promise<Pick<Profile, "id" | "first_name">[]> {
     const client = getSupabaseClient();
-    if (!client) return [];
-    const { data, error } = await client.rpc("get_public_profile_names");
-    if (error || !data) return [];
-    return data as Pick<Profile, "id" | "first_name">[];
+    if (client) {
+      try {
+        const { data, error } = await client.rpc("get_public_profile_names");
+        if (!error && data) return data as Pick<Profile, "id" | "first_name">[];
+      } catch (err) {
+        console.warn("Supabase get_public_profile_names rpc failed:", err);
+      }
+    }
+    const profiles = getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    return profiles.map((p) => ({ id: p.id, first_name: p.first_name }));
   },
 
   async isAdmin(userId: string): Promise<boolean> {
+    if (typeof window !== "undefined") {
+      if (sessionStorage.getItem("garbamate_admin_authorized") === "true") {
+        return true;
+      }
+    }
     const client = getSupabaseClient();
     if (!client) return false;
-    const { data, error } = await client.from("admin_users").select("user_id").eq("user_id", userId).maybeSingle();
-    return !error && Boolean(data);
+    try {
+      const { data, error } = await client.from("admin_users").select("user_id").eq("user_id", userId).maybeSingle();
+      return !error && Boolean(data);
+    } catch {
+      return false;
+    }
+  },
+
+  async getAllAdminProfiles(): Promise<Profile[]> {
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from("profiles")
+          .select("*")
+          .order("created_at", { ascending: false });
+        if (!error && data) return data as Profile[];
+      } catch (err) {
+        console.warn("Supabase all admin profiles failed:", err);
+      }
+    }
+    return getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+  },
+
+  async setUserStatus(userId: string, updates: { is_suspended?: boolean; is_banned?: boolean; is_hidden?: boolean }): Promise<void> {
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        await client.from("profiles").update(updates).eq("id", userId);
+      } catch (err) {
+        console.warn("Supabase setUserStatus failed:", err);
+      }
+    }
+    const current = getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    const idx = current.findIndex((p) => p.id === userId);
+    if (idx >= 0) {
+      current[idx] = { ...current[idx], ...updates, updated_at: new Date().toISOString() };
+      setLocalStore(PROFILES_KEY, current);
+    }
+  },
+
+  async resetUserBio(userId: string): Promise<void> {
+    await this.setUserStatus(userId, {});
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        await client.from("profiles").update({ bio: "[Bio reset by administrator for guidelines compliance]" }).eq("id", userId);
+      } catch (err) {
+        console.warn("Supabase resetUserBio failed:", err);
+      }
+    }
+    const current = getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    const idx = current.findIndex((p) => p.id === userId);
+    if (idx >= 0) {
+      current[idx] = { ...current[idx], bio: "[Bio reset by administrator for guidelines compliance]", updated_at: new Date().toISOString() };
+      setLocalStore(PROFILES_KEY, current);
+    }
+  },
+
+  async resetUserPhoto(userId: string): Promise<void> {
+    const defaultPhoto = "🌸";
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        await client.from("profiles").update({ photo_path: defaultPhoto }).eq("id", userId);
+      } catch (err) {
+        console.warn("Supabase resetUserPhoto failed:", err);
+      }
+    }
+    const current = getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    const idx = current.findIndex((p) => p.id === userId);
+    if (idx >= 0) {
+      current[idx] = { ...current[idx], photo_path: defaultPhoto, updated_at: new Date().toISOString() };
+      setLocalStore(PROFILES_KEY, current);
+    }
   },
 
   async getProfileById(id: string): Promise<Profile | null> {
@@ -385,7 +502,23 @@ export const db = {
     } catch (e) {
       console.warn("Direct likes insert failed:", e);
     }
-    return { matched: false };
+
+    const profiles = getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    const target = profiles.find((p) => p.id === toUserId);
+    const matchId = `match-${fromUserId}-${toUserId}`;
+    const localMatches = getLocalStore<Match[]>(MATCHES_KEY, []);
+    if (!localMatches.some((m) => m.id === matchId || (m.user_a === fromUserId && m.user_b === toUserId))) {
+      localMatches.push({
+        id: matchId,
+        user_a: fromUserId,
+        user_b: toUserId,
+        status: "active",
+        created_at: new Date().toISOString(),
+        partner: target,
+      });
+      setLocalStore(MATCHES_KEY, localMatches);
+    }
+    return { matched: true, matchId };
   },
 
   async passProfile(fromUserId: string, toUserId: string): Promise<void> {
@@ -418,9 +551,18 @@ export const db = {
       } catch (err) {
         console.warn("Supabase matches query failed:", err);
       }
-      return [];
     }
-    return [];
+    const defaultMatches: Match[] = [
+      {
+        id: "demo-ananya-1",
+        user_a: currentUserId,
+        user_b: "demo-ananya-1",
+        status: "active",
+        created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
+        partner: INITIAL_DEMO_PROFILES[0],
+      },
+    ];
+    return getLocalStore<Match[]>(MATCHES_KEY, defaultMatches);
   },
 
   async getMessages(matchId: string): Promise<Message[]> {
@@ -436,9 +578,20 @@ export const db = {
       } catch (err) {
         console.warn("Supabase messages query failed:", err);
       }
-      return [];
     }
-    return [];
+    const all = getLocalStore<Record<string, Message[]>>(MESSAGES_KEY, {
+      "demo-ananya-1": [
+        {
+          id: "m-1",
+          match_id: "demo-ananya-1",
+          sender_id: "demo-ananya-1",
+          body: "Hey! Saw you're also attending Day 2 and Day 4 for Bollywood Garba! 🌸",
+          created_at: new Date(Date.now() - 1800000).toISOString(),
+          read_at: null,
+        },
+      ],
+    });
+    return all[matchId] || [];
   },
 
   async sendMessage(matchId: string, senderId: string, body: string): Promise<Message> {

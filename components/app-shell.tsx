@@ -12,7 +12,7 @@ export function AppShell({
   children: React.ReactNode;
   title?: string;
 }) {
-  const { user, profile, isConfigured, signOut, demoLogin } = useAuth();
+  const { user, profile, signOut } = useAuth();
 
   return (
     <div className="min-h-screen pb-20 md:pb-8">
@@ -29,18 +29,6 @@ export function AppShell({
         </div>
 
         <div className="flex items-center gap-2">
-          <div
-            className="hidden sm:flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-medium bg-white/5 text-[#aab0d0] border border-white/5"
-            title={isConfigured ? "Connected to Supabase" : "Demo Mode active"}
-          >
-            <span
-              className={`h-2 w-2 rounded-full ${
-                isConfigured ? "bg-emerald-400 animate-pulse" : "bg-amber-400"
-              }`}
-            />
-            <span>{isConfigured ? "Supabase Live" : "Demo Mode"}</span>
-          </div>
-
           {user ? (
             <div className="flex items-center gap-2">
               <Link

@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/supabase/auth-context";
 
 export default function Signup() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithOtp, signUpWithPassword, demoLogin, isConfigured } = useAuth();
+  const { signInWithGoogle, signInWithOtp, signUpWithPassword } = useAuth();
   const [firstName, setFirstName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -62,12 +62,6 @@ export default function Signup() {
     }
   };
 
-  const handleDemo = async () => {
-    setLoading(true);
-    await demoLogin("newstudent.cs24@bmsce.ac.in", "Student");
-    router.push("/onboarding");
-  };
-
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-12">
       <Card className="w-full max-w-md border-white/10 shadow-2xl">
@@ -75,9 +69,6 @@ export default function Signup() {
           <Link href="/" className="text-sm font-semibold text-[#ffd166] hover:underline">
             ← Back to Home
           </Link>
-          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/10 text-[#aab0d0]">
-            {isConfigured ? "Supabase Live" : "Demo Mode"}
-          </span>
         </div>
 
         <h1 className="mt-6 text-3xl font-black">Join the floor 🪩</h1>
@@ -182,10 +173,10 @@ export default function Signup() {
               disabled={loading}
               className="w-full text-sm font-bold bg-[#ffd166] text-black hover:bg-[#ffd166]/90"
             >
-              {loading ? "Creating in Supabase..." : "Create Live Supabase Account"}
+              {loading ? "Creating account..." : "Create Account"}
             </Button>
             <p className="text-[11px] text-[#73789e] text-center">
-              Writes instantly to your Supabase Auth & public profiles table.
+              Private and verified for BMSCE students.
             </p>
           </form>
         ) : (

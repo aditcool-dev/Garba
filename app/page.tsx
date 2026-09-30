@@ -6,7 +6,7 @@ import { FESTIVAL } from "@/config/festival";
 import { useAuth } from "@/lib/supabase/auth-context";
 
 export default function Home() {
-  const { user, isConfigured, demoLogin } = useAuth();
+  const { user } = useAuth();
 
   return (
     <main className="mandala min-h-screen overflow-hidden">
@@ -16,9 +16,6 @@ export default function Home() {
             <div className="text-xl font-black">
               🪩 <span className="text-[#ffd166]">Garba</span>Mate
             </div>
-            <span className="hidden sm:inline-block rounded-full bg-white/5 px-2.5 py-0.5 text-[11px] font-medium text-[#aab0d0] border border-white/10">
-              {isConfigured ? "Supabase Connected" : "Demo Mode"}
-            </span>
           </div>
 
           <div className="flex items-center gap-3">

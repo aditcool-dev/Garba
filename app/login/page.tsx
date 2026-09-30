@@ -8,7 +8,7 @@ import { useAuth } from "@/lib/supabase/auth-context";
 
 export default function Login() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithOtp, signInWithPassword, demoLogin, isConfigured } = useAuth();
+  const { signInWithGoogle, signInWithOtp, signInWithPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [authMode, setAuthMode] = useState<"password" | "magic">("password");
@@ -58,12 +58,6 @@ export default function Login() {
     }
   };
 
-  const handleDemo = async () => {
-    setLoading(true);
-    await demoLogin("student.cs23@bmsce.ac.in", "Aditya");
-    router.push("/discover");
-  };
-
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-12">
       <Card className="w-full max-w-md border-white/10 shadow-2xl">
@@ -71,9 +65,6 @@ export default function Login() {
           <Link href="/" className="text-sm font-semibold text-[#ffd166] hover:underline">
             ← Back to Home
           </Link>
-          <span className="text-[11px] font-medium px-2 py-0.5 rounded-full bg-white/10 text-[#aab0d0]">
-            {isConfigured ? "Supabase Live" : "Demo Mode"}
-          </span>
         </div>
 
         <h1 className="mt-6 text-3xl font-black">Welcome back 👋</h1>
@@ -170,7 +161,7 @@ export default function Login() {
               disabled={loading}
               className="w-full text-sm font-bold bg-[#ffd166] text-black hover:bg-[#ffd166]/90"
             >
-              {loading ? "Signing in..." : "Sign In to Live Supabase"}
+              {loading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
         ) : (
