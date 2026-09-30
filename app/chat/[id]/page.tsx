@@ -11,40 +11,87 @@ import type { Message, Profile } from "@/lib/supabase/types";
 
 export default function ChatPage() {
   const params = useParams();
-  const matchId = (params?.id as string) || "demo-ananya-1";
-  const { user, profile: myProfile, demoLogin, isConfigured } = useAuth();
+  const matchId = (params?.id as string) || "";
+  const { user } = useAuth();
 
   const [partner, setPartner] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function loadData() {
-      // Find partner profile
-      const profiles = await db.getProfiles();
-      const p = profiles.find((item) => matchId.includes(item.id) || item.id === matchId) || profiles[0];
-      setPartner(p);
+      if (!user) {
+        setLoading(false);
+        return;
+      }
 
-      const msgs = await db.getMessages(matchId);
-      setMessages(msgs);
+      setLoading(true);
+
+      // If user came to /chat/demo or empty matchId without a real match
+      if (!matchId || matchId === "demo" || matchId === "demo-ananya-1") {
+        const matches = await db.getMatches(user.id);
+        if (matches.length > 0) {
+          // Redirect to first actual match
+          const first = matches[0];
+          setPartner(first.partner || null);
+          const msgs = await db.getMessages(first.id);
+          setMessages(msgs);
+          setLoading(false);
+          return;
+        } else {
+          setNotFound(true);
+          setLoading(false);
+          return;
+        }
+      }
+
+      // Check matches for current user
+      const userMatches = await db.getMatches(user.id);
+      const matched = userMatches.find(
+        (m) => m.id === matchId || m.user_a === matchId || m.user_b === matchId || m.partner?.id === matchId
+      );
+
+      if (matched && matched.partner && matched.partner.id !== user.id) {
+        setPartner(matched.partner);
+        const msgs = await db.getMessages(matched.id);
+        setMessages(msgs);
+        setLoading(false);
+        return;
+      }
+
+      // Lookup target profile directly
+      const directProfile = await db.getProfileById(matchId);
+      if (directProfile && directProfile.id !== user.id) {
+        setPartner(directProfile);
+        const msgs = await db.getMessages(matchId);
+        setMessages(msgs);
+        setLoading(false);
+        return;
+      }
+
+      // Partner cannot be the logged-in user themselves or an invalid id
+      setNotFound(true);
+      setLoading(false);
     }
 
     loadData();
 
-    // Setup Supabase Realtime subscription
-    const unsubscribe = db.subscribeToMessages(matchId, (newMsg) => {
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === newMsg.id)) return prev;
-        return [...prev, newMsg];
+    if (matchId && matchId !== "demo") {
+      const unsubscribe = db.subscribeToMessages(matchId, (newMsg) => {
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === newMsg.id)) return prev;
+          return [...prev, newMsg];
+        });
       });
-    });
-
-    return () => {
-      unsubscribe();
-    };
-  }, [matchId]);
+      return () => {
+        unsubscribe();
+      };
+    }
+  }, [matchId, user]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -52,7 +99,7 @@ export default function ChatPage() {
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!text.trim() || !user || sending) return;
+    if (!text.trim() || !user || !partner || sending) return;
 
     setSending(true);
     const content = text.trim();
@@ -63,21 +110,6 @@ export default function ChatPage() {
       if (prev.some((m) => m.id === newMsg.id)) return prev;
       return [...prev, newMsg];
     });
-
-    // In demo mode or if chatting with demo user, simulate friendly partner reply after 1.5s
-    if (partner && (partner.is_demo || !isConfigured)) {
-      setTimeout(async () => {
-        const replies = [
-          "Super excited for Day 4 too! What colour outfit are you planning to wear?",
-          "Yes! The music beats are going to be insane this year. Have you got your passes yet?",
-          "Sounds amazing! Let's definitely catch up near the food stall circle before the main rounds begin.",
-          "Haha same! I'm still perfecting the 3-taali turn, you'll have to guide me!",
-        ];
-        const randomReply = replies[Math.floor(Math.random() * replies.length)];
-        const replyMsg = await db.sendMessage(matchId, partner.id, randomReply);
-        setMessages((prev) => [...prev, replyMsg]);
-      }, 1400);
-    }
 
     setSending(false);
   };
@@ -106,8 +138,44 @@ export default function ChatPage() {
     );
   }
 
-  const partnerName = partner?.first_name || "Match Partner";
-  const partnerPhoto = partner?.photo_path || "🌸";
+  if (loading) {
+    return (
+      <AppShell title="Chat">
+        <div className="py-20 text-center text-[#aab0d0]">
+          <div className="text-4xl animate-spin mb-3">🪩</div>
+          <p className="text-sm">Connecting to secure chat room...</p>
+        </div>
+      </AppShell>
+    );
+  }
+
+  // Prevent chatting with oneself or non-existent match
+  if (notFound || !partner || partner.id === user.id) {
+    return (
+      <AppShell title="Chat">
+        <div className="mx-auto max-w-lg pt-12 text-center">
+          <Card className="border-white/10 p-8 shadow-2xl">
+            <div className="text-5xl mb-3">🤝</div>
+            <h1 className="text-2xl font-black text-white">No active match found</h1>
+            <p className="mt-3 text-sm text-[#aab0d0] leading-6">
+              You haven&apos;t matched with this student yet. To protect campus safety, chat unlocks only after both dancers swipe interested on each other!
+            </p>
+            <div className="mt-6 flex justify-center gap-3">
+              <Link href="/matches">
+                <Button>View Matches</Button>
+              </Link>
+              <Link href="/discover">
+                <Button variant="secondary">Find Partners</Button>
+              </Link>
+            </div>
+          </Card>
+        </div>
+      </AppShell>
+    );
+  }
+
+  const partnerName = partner.first_name || "Match Partner";
+  const partnerPhoto = partner.photo_path || "🌸";
 
   return (
     <AppShell title={`Chat · ${partnerName}`}>
@@ -127,24 +195,22 @@ export default function ChatPage() {
                 <h1 className="font-black text-lg text-white">{partnerName}</h1>
                 <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-500/20">
                   <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Online
+                  Matched
                 </span>
               </div>
               <p className="text-xs text-[#aab0d0]">
-                {partner?.branch || "BMSCE"} · Matched for Navratri
+                {partner.branch || "BMSCE"} · Matched for Navratri
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2">
-            {partner && (
-              <Link
-                href={`/profile/${partner.id}`}
-                className="rounded-full bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-semibold text-[#ffd166] border border-white/10"
-              >
-                View Profile
-              </Link>
-            )}
+            <Link
+              href={`/profile/${partner.id}`}
+              className="rounded-full bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-semibold text-[#ffd166] border border-white/10"
+            >
+              View Profile
+            </Link>
           </div>
         </div>
 
@@ -161,7 +227,7 @@ export default function ChatPage() {
           {messages.length === 0 ? (
             <div className="py-12 text-center text-[#aab0d0] text-sm">
               <p className="text-2xl mb-2">👋</p>
-              <p>Say hello to break the ice and coordinate your Navratri nights!</p>
+              <p>Say hello to {partnerName} to coordinate your Navratri outfit and dance steps!</p>
             </div>
           ) : (
             messages.map((message) => {
@@ -196,7 +262,7 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Starters */}
+        {/* Conversation Starters */}
         <div className="my-3 flex flex-wrap gap-2">
           {[
             "Which Navratri nights are you going?",

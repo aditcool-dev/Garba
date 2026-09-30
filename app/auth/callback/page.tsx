@@ -36,6 +36,9 @@ export default function AuthCallbackPage() {
         return;
       }
 
+      const sessionUser = { id: data.session.user.id, email: data.session.user.email ?? "" };
+      localStorage.setItem("garbamate_auth_session", JSON.stringify(sessionUser));
+
       const { data: profile } = await client
         .from("profiles")
         .select("onboarding_complete")
