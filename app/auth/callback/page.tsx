@@ -160,7 +160,7 @@ export default function AuthCallbackPage() {
               className="inline-block w-full rounded-xl bg-white/5 py-2.5 text-xs font-semibold text-[#aab0d0] hover:bg-white/10 transition"
               href="/login"
             >
-              Sign In with 6-Digit College Code
+              Sign In with Email Magic Link
             </a>
           </div>
         </div>
