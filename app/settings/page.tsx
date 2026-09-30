@@ -117,15 +117,6 @@ export default function Settings() {
             <p className="mt-2 text-xs text-[#73789e] leading-5">
               GarbaMate enforces strict campus safety and PostgreSQL Row Level Security (RLS). Your raw email address, password hashes, and personal contact details are never exposed to other students.
             </p>
-            <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
-              <span className="text-[11px] text-[#73789e]">System Administration</span>
-              <Link
-                href="/admin"
-                className="text-xs font-semibold text-[#ffd166]/70 hover:text-[#ffd166] flex items-center gap-1 transition"
-              >
-                <span>🔒</span> Admin Console →
-              </Link>
-            </div>
           </Card>
         </div>
       </div>

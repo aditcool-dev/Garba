@@ -339,6 +339,11 @@ export const db = {
   },
 
   async getAllAdminProfiles(): Promise<Profile[]> {
+    const isReal = (p: Profile) =>
+      !p.is_demo &&
+      !p.id.startsWith("demo-") &&
+      !p.id.startsWith("current-user");
+
     const client = getSupabaseClient();
     if (client) {
       try {
@@ -346,12 +351,47 @@ export const db = {
           .from("profiles")
           .select("*")
           .order("created_at", { ascending: false });
-        if (!error && data) return data as Profile[];
+        if (!error && data) {
+          return (data as Profile[]).filter(isReal);
+        }
       } catch (err) {
         console.warn("Supabase all admin profiles failed:", err);
       }
     }
-    return getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    const local = getLocalStore<Profile[]>(PROFILES_KEY, []);
+    return local.filter(isReal);
+  },
+
+  async purgeDemoData(): Promise<number> {
+    const isReal = (p: Profile) =>
+      !p.is_demo &&
+      !p.id.startsWith("demo-") &&
+      !p.id.startsWith("current-user");
+
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        await client
+          .from("profiles")
+          .delete()
+          .or("is_demo.eq.true,id.like.demo-%,id.like.current-user%");
+      } catch (e) {
+        console.warn("Purge demo profiles Supabase warning:", e);
+      }
+    }
+
+    const local = getLocalStore<Profile[]>(PROFILES_KEY, []);
+    const realOnly = local.filter(isReal);
+    setLocalStore(PROFILES_KEY, realOnly);
+
+    // Also purge demo reports
+    const reports = getLocalStore<Report[]>(REPORTS_KEY, []);
+    const realReports = reports.filter(
+      (r) => !r.reporter_id.startsWith("usr-demo") && !r.reported_user_id.startsWith("demo-")
+    );
+    setLocalStore(REPORTS_KEY, realReports);
+
+    return local.length - realOnly.length;
   },
 
   async setUserStatus(userId: string, updates: { is_suspended?: boolean; is_banned?: boolean; is_hidden?: boolean }): Promise<void> {
@@ -683,34 +723,19 @@ export const db = {
   },
 
   async getReports(): Promise<Report[]> {
+    const isRealReport = (r: Report) =>
+      !r.reporter_id.startsWith("usr-demo") && !r.reported_user_id.startsWith("demo-");
+
     const client = getSupabaseClient();
     if (client) {
       try {
         const { data, error } = await client.from("reports").select("*").order("created_at", { ascending: false });
-        if (!error && data) return data as Report[];
+        if (!error && data) return (data as Report[]).filter(isRealReport);
       } catch (err) {
         console.warn("Supabase getReports failed:", err);
       }
     }
-    return getLocalStore<Report[]>(REPORTS_KEY, [
-      {
-        id: "rep-1",
-        reporter_id: "usr-demo-1",
-        reported_user_id: "demo-vikram-6",
-        reason: "spam",
-        description: "Sent commercial tickets offer in message",
-        status: "open",
-        created_at: new Date(Date.now() - 3600000 * 5).toISOString(),
-      },
-      {
-        id: "rep-2",
-        reporter_id: "usr-demo-2",
-        reported_user_id: "demo-aarav-2",
-        reason: "other",
-        description: "Duplicate profile check",
-        status: "reviewing",
-        created_at: new Date(Date.now() - 86400000).toISOString(),
-      },
-    ]);
+    const local = getLocalStore<Report[]>(REPORTS_KEY, []);
+    return local.filter(isRealReport);
   },
 };

@@ -65,7 +65,7 @@ export default function AuthCallbackPage() {
       // If still not authenticated, explain simply
       if (active) {
         setError(
-          "This verification link could not be opened here. Please sign in by entering the 6-digit code on the login page."
+          "This verification link could not be opened or may have expired. Please return to login and request a fresh link."
         );
       }
 

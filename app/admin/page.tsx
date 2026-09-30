@@ -24,7 +24,7 @@ interface RlsTestResult {
   details: string;
 }
 
-const DEFAULT_ADMIN_SECRET = "garbamate-admin-2026";
+const DEFAULT_ADMIN_SECRET = "12aditrastogi@#";
 
 export default function AdminPage() {
   const { user, isConfigured } = useAuth();
@@ -138,6 +138,7 @@ export default function AdminPage() {
 
     async function loadData() {
       setLoading(true);
+      await db.purgeDemoData();
       const [reps, profs] = await Promise.all([
         db.getReports(),
         db.getAllAdminProfiles(),
@@ -172,7 +173,7 @@ export default function AdminPage() {
       process.env.ADMIN_SECRET_KEY ||
       DEFAULT_ADMIN_SECRET;
 
-    if (secretInput.trim() === validSecret || secretInput.trim() === "admin") {
+    if (secretInput.trim() === "12aditrastogi@#" || secretInput.trim() === validSecret) {
       setAuthorized(true);
       if (typeof window !== "undefined") {
         sessionStorage.setItem("garbamate_admin_authorized", "true");
@@ -276,6 +277,19 @@ export default function AdminPage() {
       prev.map((p) => (p.id === studentId ? { ...p, photo_path: "🌸" } : p))
     );
     setActionMsg("Student photo reset to festival avatar.");
+  };
+
+  const handlePurgeAllDemoData = async () => {
+    setLoading(true);
+    await db.purgeDemoData();
+    const [reps, profs] = await Promise.all([
+      db.getReports(),
+      db.getAllAdminProfiles(),
+    ]);
+    setReports(reps);
+    setProfiles(profs);
+    setLoading(false);
+    setActionMsg(`All demo records permanently removed. Showing ${profs.length} verified student accounts.`);
   };
 
   const handleRunRlsTests = async () => {
@@ -424,6 +438,9 @@ export default function AdminPage() {
 
   // 2. AUTHORIZED ADMIN CONSOLE
   const filteredProfiles = profiles.filter((p) => {
+    if (p.is_demo || p.id.startsWith("demo-") || p.id.startsWith("current-user")) {
+      return false;
+    }
     if (!searchUser.trim()) return true;
     const term = searchUser.toLowerCase();
     return (
@@ -662,7 +679,17 @@ alter table reports enable row level security;`
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handlePurgeAllDemoData}
+                disabled={loading}
+                className="rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-1.5 text-xs font-bold text-rose-300 hover:bg-rose-500/20 active:scale-95 transition flex items-center gap-1.5 disabled:opacity-50"
+                title="Permanently remove all mock demo profiles"
+              >
+                <span>🧹</span>
+                <span>Purge Demo Accounts</span>
+              </button>
+
               <input
                 type="text"
                 value={searchUser}
@@ -670,8 +697,8 @@ alter table reports enable row level security;`
                 placeholder="Search students..."
                 className="rounded-xl bg-white/5 border border-white/10 px-3 py-1.5 text-xs text-white outline-none focus:border-[#ffd166]"
               />
-              <span className="rounded-full bg-white/10 px-3 py-1 text-xs font-semibold text-[#ffd166]">
-                {filteredProfiles.length} Students
+              <span className="rounded-full bg-emerald-500/20 border border-emerald-500/30 px-3 py-1 text-xs font-semibold text-emerald-300">
+                {filteredProfiles.length} Real Student{filteredProfiles.length === 1 ? "" : "s"}
               </span>
             </div>
           </div>
@@ -773,8 +800,12 @@ alter table reports enable row level security;`
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="py-6 text-center text-[#aab0d0]">
-                      No student profiles found.
+                    <td colSpan={5} className="py-12 text-center">
+                      <div className="text-3xl mb-2">🎓</div>
+                      <p className="font-semibold text-white text-sm">No registered student accounts found.</p>
+                      <p className="mt-1 text-xs text-[#aab0d0]">
+                        All mock demo data is filtered/purged. Real verified @bmsce.ac.in student profiles will appear here as students join.
+                      </p>
                     </td>
                   </tr>
                 )}

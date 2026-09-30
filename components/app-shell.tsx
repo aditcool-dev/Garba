@@ -19,14 +19,14 @@ export function AppShell({
   const [tapCount, setTapCount] = useState(0);
 
   const handleSecretTap = (e: React.MouseEvent) => {
-    e.preventDefault();
     const next = tapCount + 1;
     if (next >= 5) {
+      e.preventDefault();
       setTapCount(0);
       router.push("/admin");
     } else {
       setTapCount(next);
-      setTimeout(() => setTapCount(0), 3000);
+      setTimeout(() => setTapCount(0), 2500);
     }
   };
 
@@ -35,18 +35,18 @@ export function AppShell({
       <div>
         <header className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-white/5">
           <div className="flex items-center gap-3">
-            <Link href="/" className="text-xl font-black tracking-tight hover:opacity-90 flex items-center gap-1.5">
-              <span
-                onClick={handleSecretTap}
-                className="cursor-pointer select-none active:scale-95 transition"
-                title="GarbaMate"
-              >
+            <div
+              onClick={handleSecretTap}
+              className="text-xl font-black tracking-tight hover:opacity-90 flex items-center gap-1.5 cursor-pointer select-none"
+              title="GarbaMate"
+            >
+              <span className="active:scale-95 transition">
                 🪩
               </span>
               <span>
                 <span className="text-[#ffd166]">Garba</span>Mate
               </span>
-            </Link>
+            </div>
             {title && (
               <span className="hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-white/10 text-[#aab0d0]">
                 {title}
@@ -93,10 +93,6 @@ export function AppShell({
           <Link href="/terms" className="hover:text-[#ffd166]">Terms</Link>
           <span>•</span>
           <Link href="/guidelines" className="hover:text-[#ffd166]">Guidelines</Link>
-          <span>•</span>
-          <Link href="/admin" className="text-[#73789e]/60 hover:text-[#ffd166] flex items-center gap-1">
-            <span>🔒</span> Admin
-          </Link>
         </div>
         <p className="mt-2 text-[10px] text-[#73789e]/50">
           GarbaMate — BMSCE Navratri Partner App

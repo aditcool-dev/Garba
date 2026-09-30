@@ -22,14 +22,14 @@ export default function Home() {
   }, [router]);
 
   const handleSecretTap = (e: React.MouseEvent) => {
-    e.preventDefault();
     const next = tapCount + 1;
     if (next >= 5) {
+      e.preventDefault();
       setTapCount(0);
       router.push("/admin");
     } else {
       setTapCount(next);
-      setTimeout(() => setTapCount(0), 3000);
+      setTimeout(() => setTapCount(0), 2500);
     }
   };
 
@@ -38,12 +38,12 @@ export default function Home() {
       <div className="mx-auto flex w-full max-w-6xl flex-col justify-between px-6 py-7 flex-1">
         <header className="flex items-center justify-between border-b border-white/5 pb-4">
           <div className="flex items-center gap-3">
-            <div className="text-xl font-black flex items-center gap-1.5">
-              <span
-                onClick={handleSecretTap}
-                className="cursor-pointer select-none active:scale-95 transition"
-                title="GarbaMate"
-              >
+            <div
+              onClick={handleSecretTap}
+              className="text-xl font-black flex items-center gap-1.5 cursor-pointer select-none"
+              title="GarbaMate"
+            >
+              <span className="active:scale-95 transition">
                 🪩
               </span>
               <span>
@@ -163,10 +163,6 @@ export default function Home() {
           <Link href="/terms" className="hover:text-[#ffd166]">Terms</Link>
           <span>•</span>
           <Link href="/guidelines" className="hover:text-[#ffd166]">Guidelines</Link>
-          <span>•</span>
-          <Link href="/admin" className="text-[#73789e]/60 hover:text-[#ffd166] flex items-center gap-1">
-            <span>🔒</span> Admin
-          </Link>
         </div>
         <p className="mt-2 text-[10px] text-[#73789e]/50">
           GarbaMate — BMS College of Engineering Navratri 2026
