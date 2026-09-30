@@ -78,12 +78,12 @@ export default function Settings() {
               <select
                 value={partnerPref}
                 onChange={(e) => handlePrefChange(e.target.value)}
-                className="mt-2 w-full rounded-xl bg-white/5 p-3 text-sm text-white border border-white/10 outline-none"
+                className="mt-2 w-full rounded-xl bg-[#161a3d] p-3 text-sm text-white border border-white/10 outline-none"
               >
-                <option value="Everyone">Everyone</option>
-                <option value="Women">Women</option>
-                <option value="Men">Men</option>
-                <option value="Non-binary">Non-binary</option>
+                <option value="Everyone" className="bg-[#161a3d] text-white">Everyone</option>
+                <option value="Women" className="bg-[#161a3d] text-white">Women</option>
+                <option value="Men" className="bg-[#161a3d] text-white">Men</option>
+                <option value="Non-binary" className="bg-[#161a3d] text-white">Non-binary</option>
               </select>
             </div>
           </Card>
@@ -117,6 +117,15 @@ export default function Settings() {
             <p className="mt-2 text-xs text-[#73789e] leading-5">
               GarbaMate enforces strict campus safety and PostgreSQL Row Level Security (RLS). Your raw email address, password hashes, and personal contact details are never exposed to other students.
             </p>
+            <div className="mt-4 pt-3 border-t border-white/5 flex items-center justify-between">
+              <span className="text-[11px] text-[#73789e]">System Administration</span>
+              <Link
+                href="/admin"
+                className="text-xs font-semibold text-[#ffd166]/70 hover:text-[#ffd166] flex items-center gap-1 transition"
+              >
+                <span>🔒</span> Admin Console →
+              </Link>
+            </div>
           </Card>
         </div>
       </div>

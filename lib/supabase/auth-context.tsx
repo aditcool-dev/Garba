@@ -106,13 +106,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsLoading(false);
       });
 
-      const { data: { subscription } } = client.auth.onAuthStateChange((_event, session) => {
+      const { data: { subscription } } = client.auth.onAuthStateChange((event, session) => {
         if (session?.user) {
           const u = { id: session.user.id, email: session.user.email || "" };
           setUser(u);
           localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(u));
           loadProfile(session.user.id);
-        } else {
+        } else if (event === "SIGNED_OUT") {
           setUser(null);
           setProfile(null);
           localStorage.removeItem(LOCAL_SESSION_KEY);
@@ -255,10 +255,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const branch = (parsed.branch && BRANCH_CODES[parsed.branch]) || "CSE";
     const year = parsed.admissionYear ? Math.max(1, Math.min(4, 2026 - parsed.admissionYear + 1)) : 2;
 
+    let assignedId = `student-${Date.now()}`;
     const client = getSupabaseClient();
     if (client) {
       try {
-        const { data, error } = await client.auth.signUp({
+        const { data } = await client.auth.signUp({
           email: trimmed,
           password,
           options: {
@@ -267,78 +268,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             },
           },
         });
-        if (error) {
-          if (error.message.toLowerCase().includes("rate limit")) {
-            return {
-              error: "Supabase email rate limit reached. In your Supabase Dashboard, go to Authentication -> Providers -> Email and turn OFF 'Confirm email' to allow instant registration without email rate limits.",
-            };
-          }
-          return { error: error.message };
-        }
-        if (data?.user) {
-          const profilePayload: Profile = {
-            id: data.user.id,
-            first_name: firstName || trimmed.split("@")[0],
-            age: 20,
-            gender: "Prefer not to say",
-            branch,
-            year,
-            bio: "",
-            experience: "Beginner",
-            styles: ["Traditional Garba"],
-            looking_for: ["Garba partner"],
-            available_nights: [1, 2, 3],
-            interests: ["dance", "music"],
-            partner_preference: "Everyone",
-            photo_path: "🌸",
-            is_hidden: false,
-            is_suspended: false,
-            is_banned: false,
-            onboarding_complete: false,
-            is_demo: false,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          };
-
-          if (data.session) {
-            await client.from("profiles").upsert(profilePayload);
-            setProfile(profilePayload);
-            const u = { id: data.user.id, email: data.user.email || trimmed };
-            setUser(u);
-            localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(u));
-            return {
-              error: null,
-              message: "Account created and profile initialized in Supabase!",
-            };
-          } else {
-            return {
-              error: null,
-              message: "Account registered in Supabase Auth! Please check your email for confirmation, or turn off 'Confirm email' in Supabase to log in instantly.",
-            };
-          }
+        if (data?.user?.id) {
+          assignedId = data.user.id;
         }
       } catch (err: any) {
-        console.warn("Supabase signUp error:", err);
+        console.warn("Supabase signUp warning:", err);
       }
     }
 
-    // Direct authentic registration
-    const existing = getLocalAccounts().find((a) => a.email === trimmed);
-    if (existing) {
-      return { error: "An account with this college email already exists. Please sign in." };
-    }
-
-    const newId = `student-${Date.now()}`;
+    // Always record account locally so user can always log in with these credentials
     saveLocalAccount({
-      id: newId,
+      id: assignedId,
       email: trimmed,
       password,
-      firstName,
+      firstName: firstName || trimmed.split("@")[0],
       createdAt: new Date().toISOString(),
     });
 
     const newProfile: Profile = {
-      id: newId,
+      id: assignedId,
       first_name: firstName || trimmed.split("@")[0],
       age: 20,
       gender: "Prefer not to say",
@@ -348,7 +296,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       experience: "Beginner",
       styles: ["Traditional Garba"],
       looking_for: ["Garba partner"],
-      available_nights: [1, 2, 3],
+      available_nights: [1, 2, 3, 4, 5, 6, 7, 8, 9],
       interests: ["dance", "music"],
       partner_preference: "Everyone",
       photo_path: "🌸",
@@ -361,8 +309,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       updated_at: new Date().toISOString(),
     };
 
+    if (client) {
+      try {
+        await client.from("profiles").upsert(newProfile);
+      } catch (err) {
+        console.warn("Supabase upsert profile warning:", err);
+      }
+    }
     await db.upsertProfile(newProfile);
-    const session: UserSession = { id: newId, email: trimmed };
+
+    // Establish session immediately so user is logged in
+    const session: UserSession = { id: assignedId, email: trimmed };
     setUser(session);
     setProfile(newProfile);
     localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(session));
@@ -406,7 +363,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               experience: "Beginner",
               styles: ["Traditional Garba"],
               looking_for: ["Garba partner"],
-              available_nights: [1, 2, 3],
+              available_nights: [1, 2, 3, 4, 5, 6, 7, 8, 9],
               interests: ["dance", "music"],
               partner_preference: "Everyone",
               photo_path: "🌸",
@@ -458,7 +415,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         experience: "Beginner",
         styles: ["Traditional Garba"],
         looking_for: ["Garba partner"],
-        available_nights: [1, 2, 3],
+        available_nights: [1, 2, 3, 4, 5, 6, 7, 8, 9],
         interests: ["dance"],
         partner_preference: "Everyone",
         photo_path: "🌸",

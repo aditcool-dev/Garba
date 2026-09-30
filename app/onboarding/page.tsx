@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
-import { Button, Card, Badge } from "@/components/ui";
+import { Button, Card } from "@/components/ui";
 import { BRANCHES } from "@/config/branches";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
@@ -34,7 +34,7 @@ const AVATAR_EMOJIS = ["🌸", "🕺", "💃", "🥻", "✨", "🥁", "⚡", "�
 
 export default function Onboarding() {
   const router = useRouter();
-  const { user, profile: existingProfile, demoLogin, refreshProfile } = useAuth();
+  const { user, profile: existingProfile, refreshProfile } = useAuth();
   const [step, setStep] = useState(1);
 
   // Form states
@@ -47,9 +47,6 @@ export default function Onboarding() {
   const [selectedStyles, setSelectedStyles] = useState<string[]>(
     existingProfile?.styles || ["Traditional Garba", "Bollywood Garba"]
   );
-  const [selectedNights, setSelectedNights] = useState<number[]>(
-    existingProfile?.available_nights || [2, 4, 7]
-  );
   const [selectedInterests, setSelectedInterests] = useState<string[]>(
     existingProfile?.interests || ["dance", "music"]
   );
@@ -61,7 +58,7 @@ export default function Onboarding() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    const userId = user?.id || "current-user";
+    const userId = user?.id || "student-temp";
     const { url, error } = await uploadAvatar(userId, file);
     if (!error && url) {
       setPhoto(url);
@@ -77,12 +74,6 @@ export default function Onboarding() {
     );
   };
 
-  const toggleNight = (night: number) => {
-    setSelectedNights((prev) =>
-      prev.includes(night) ? prev.filter((n) => n !== night) : [...prev, night]
-    );
-  };
-
   const toggleInterest = (interest: string) => {
     if (selectedInterests.includes(interest)) {
       setSelectedInterests((prev) => prev.filter((i) => i !== interest));
@@ -95,9 +86,20 @@ export default function Onboarding() {
     setSaving(true);
     let currentUserId = user?.id;
 
+    if (!currentUserId && typeof window !== "undefined") {
+      try {
+        const stored = localStorage.getItem("garbamate_auth_session");
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          currentUserId = parsed.id;
+        }
+      } catch (err) {
+        console.warn("Session parse error:", err);
+      }
+    }
+
     if (!currentUserId) {
-      router.push("/login");
-      return;
+      currentUserId = `student-${Date.now()}`;
     }
 
     await db.upsertProfile({
@@ -111,7 +113,7 @@ export default function Onboarding() {
       experience,
       styles: selectedStyles.length ? selectedStyles : ["Traditional Garba"],
       looking_for: ["Garba partner"],
-      available_nights: selectedNights.length ? selectedNights : [1, 2, 3],
+      available_nights: [1, 2, 3, 4, 5, 6, 7, 8, 9], // Available for all Navratri nights
       interests: selectedInterests.length ? selectedInterests : ["dance"],
       partner_preference: "Everyone",
       photo_path: photo,
@@ -127,32 +129,30 @@ export default function Onboarding() {
   };
 
   return (
-    <AppShell title={`Profile setup · ${step}/6`}>
+    <AppShell title={`Profile setup · ${step}/5`}>
       <div className="mx-auto max-w-xl">
         <div className="mb-6 h-2 rounded-full bg-white/10 overflow-hidden">
           <div
             className="h-2 rounded-full bg-gradient-to-r from-[#f35ca8] to-[#ffd166] transition-all duration-300"
-            style={{ width: `${(step / 6) * 100}%` }}
+            style={{ width: `${(step / 5) * 100}%` }}
           />
         </div>
 
-        <Card className="border-white/10 shadow-2xl p-7">
-          <p className="text-xs font-bold text-[#ffd166] uppercase tracking-wider">Step {step} of 6</p>
+        <Card className="border-white/10 shadow-2xl p-7 bg-[#131735]">
+          <p className="text-xs font-bold text-[#ffd166] uppercase tracking-wider">Step {step} of 5</p>
           <h1 className="mt-2 text-3xl font-black">
             {step === 1 && "Choose your festival avatar"}
             {step === 2 && "The basics"}
             {step === 3 && "Your Garba vibe"}
-            {step === 4 && "Which Navratri nights?"}
-            {step === 5 && "Interests & tags"}
-            {step === 6 && "Profile preview"}
+            {step === 4 && "Interests & tags"}
+            {step === 5 && "Profile preview"}
           </h1>
           <p className="mt-2 text-xs text-[#aab0d0]">
             {step === 1 && "Upload your photo to Supabase Storage or select a festival emoji."}
             {step === 2 && "Verified BMSCE campus details."}
             {step === 3 && "Select your skill level and favourite dance styles."}
-            {step === 4 && "Nights you plan to attend on campus."}
-            {step === 5 && "Pick up to 6 interests for compatibility matching."}
-            {step === 6 && "Check how other students will see your card."}
+            {step === 4 && "Pick up to 6 interests for compatibility matching."}
+            {step === 5 && "Check how other students will see your card on the floor."}
           </p>
 
           {/* STEP 1: Avatar */}
@@ -208,7 +208,7 @@ export default function Onboarding() {
                 <input
                   value={firstName}
                   onChange={(e) => setFirstName(e.target.value)}
-                  className="w-full rounded-xl bg-white/5 p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
+                  className="w-full rounded-xl bg-[#161a3d] p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
                   placeholder="e.g. Aditya"
                 />
               </div>
@@ -222,7 +222,7 @@ export default function Onboarding() {
                     max={30}
                     value={age}
                     onChange={(e) => setAge(Number(e.target.value))}
-                    className="w-full rounded-xl bg-white/5 p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
+                    className="w-full rounded-xl bg-[#161a3d] p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
                   />
                 </div>
                 <div>
@@ -230,12 +230,12 @@ export default function Onboarding() {
                   <select
                     value={year}
                     onChange={(e) => setYear(Number(e.target.value))}
-                    className="w-full rounded-xl bg-white/5 p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
+                    className="w-full rounded-xl bg-[#161a3d] p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
                   >
-                    <option value={1}>1st year</option>
-                    <option value={2}>2nd year</option>
-                    <option value={3}>3rd year</option>
-                    <option value={4}>4th year</option>
+                    <option value={1} className="bg-[#161a3d] text-white">1st year</option>
+                    <option value={2} className="bg-[#161a3d] text-white">2nd year</option>
+                    <option value={3} className="bg-[#161a3d] text-white">3rd year</option>
+                    <option value={4} className="bg-[#161a3d] text-white">4th year</option>
                   </select>
                 </div>
               </div>
@@ -245,10 +245,10 @@ export default function Onboarding() {
                 <select
                   value={branch}
                   onChange={(e) => setBranch(e.target.value)}
-                  className="w-full rounded-xl bg-white/5 p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
+                  className="w-full rounded-xl bg-[#161a3d] p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
                 >
                   {BRANCHES.map((b) => (
-                    <option key={b} value={b}>
+                    <option key={b} value={b} className="bg-[#161a3d] text-white">
                       {b}
                     </option>
                   ))}
@@ -262,7 +262,7 @@ export default function Onboarding() {
                   onChange={(e) => setBio(e.target.value)}
                   maxLength={200}
                   rows={3}
-                  className="w-full rounded-xl bg-white/5 p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
+                  className="w-full rounded-xl bg-[#161a3d] p-3 text-white border border-white/10 outline-none focus:border-[#ffd166]"
                   placeholder="Share your Garba energy, favorite songs, or who you want to meet!"
                 />
               </div>
@@ -312,35 +312,8 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* STEP 4: Nights */}
+          {/* STEP 4: Interests */}
           {step === 4 && (
-            <div className="mt-7">
-              <label className="block text-xs font-semibold text-[#c5c9e8] mb-3">
-                Select the nights you plan to dance at BMSCE:
-              </label>
-              <div className="grid grid-cols-3 gap-3">
-                {Array.from({ length: 9 }, (_, i) => i + 1).map((n) => (
-                  <button
-                    key={n}
-                    onClick={() => toggleNight(n)}
-                    className={`rounded-2xl border p-4 text-center transition ${
-                      selectedNights.includes(n)
-                        ? "border-[#ffd166] bg-[#ffd166]/20 text-[#ffd166] font-bold shadow-lg"
-                        : "border-white/10 bg-white/5 text-[#c5c9e8] hover:border-white/30"
-                    }`}
-                  >
-                    <span className="block text-base">Day {n}</span>
-                    <span className="text-[10px] text-[#aab0d0]">
-                      {n === 1 || n === 9 ? "Grand Night" : "Regular"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* STEP 5: Interests */}
-          {step === 5 && (
             <div className="mt-7 space-y-4">
               <label className="block text-xs font-semibold text-[#c5c9e8]">
                 Select up to 6 interests for better algorithm compatibility:
@@ -367,8 +340,8 @@ export default function Onboarding() {
             </div>
           )}
 
-          {/* STEP 6: Preview */}
-          {step === 6 && (
+          {/* STEP 5: Preview */}
+          {step === 5 && (
             <div className="mt-7 rounded-2xl bg-white/5 p-5 border border-white/10 text-center">
               <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-white/10 text-5xl overflow-hidden border border-white/20">
                 {photo.startsWith("http") || photo.startsWith("data:") ? (
@@ -385,11 +358,9 @@ export default function Onboarding() {
               </p>
               <p className="mt-3 text-sm text-[#c5c9e8] italic">&quot;{bio || "Ready for Garba!"}&quot;</p>
               <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-                {selectedNights.map((n) => (
-                  <Badge key={n} className="bg-[#f35ca8]/20 text-[#ffb1d8]">
-                    Day {n}
-                  </Badge>
-                ))}
+                <span className="rounded-full bg-[#f35ca8]/20 px-3 py-1 text-xs text-[#ffb1d8] border border-[#f35ca8]/30">
+                  All 9 Navratri Nights
+                </span>
               </div>
             </div>
           )}
@@ -403,8 +374,8 @@ export default function Onboarding() {
             >
               Back
             </Button>
-            {step < 6 ? (
-              <Button onClick={() => setStep((s) => Math.min(6, s + 1))}>
+            {step < 5 ? (
+              <Button onClick={() => setStep((s) => Math.min(5, s + 1))}>
                 Continue
               </Button>
             ) : (

@@ -132,15 +132,15 @@ export default function Discover() {
                     setFilterBranch(e.target.value);
                     setIndex(0);
                   }}
-                  className="w-full rounded-lg bg-white/10 p-2 text-white outline-none border border-white/10"
+                  className="w-full rounded-lg bg-[#161a3d] p-2 text-white outline-none border border-white/10"
                 >
-                  <option value="All">All branches</option>
-                  <option value="CSE">CSE</option>
-                  <option value="ISE">ISE</option>
-                  <option value="ECE">ECE</option>
-                  <option value="AI&ML">AI&ML</option>
-                  <option value="AI&DS">AI&DS</option>
-                  <option value="ME">ME</option>
+                  <option value="All" className="bg-[#161a3d] text-white">All branches</option>
+                  <option value="CSE" className="bg-[#161a3d] text-white">CSE</option>
+                  <option value="ISE" className="bg-[#161a3d] text-white">ISE</option>
+                  <option value="ECE" className="bg-[#161a3d] text-white">ECE</option>
+                  <option value="AI&ML" className="bg-[#161a3d] text-white">AI&ML</option>
+                  <option value="AI&DS" className="bg-[#161a3d] text-white">AI&DS</option>
+                  <option value="ME" className="bg-[#161a3d] text-white">ME</option>
                 </select>
               </div>
               <div>
@@ -151,11 +151,11 @@ export default function Discover() {
                     setFilterNight(e.target.value === "All" ? "All" : Number(e.target.value));
                     setIndex(0);
                   }}
-                  className="w-full rounded-lg bg-white/10 p-2 text-white outline-none border border-white/10"
+                  className="w-full rounded-lg bg-[#161a3d] p-2 text-white outline-none border border-white/10"
                 >
-                  <option value="All">All Nights</option>
+                  <option value="All" className="bg-[#161a3d] text-white">All Nights</option>
                   {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-                    <option key={n} value={n}>
+                    <option key={n} value={n} className="bg-[#161a3d] text-white">
                       Day {n}
                     </option>
                   ))}

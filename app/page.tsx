@@ -1,20 +1,45 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { Button, Card, Badge } from "@/components/ui";
 import { FESTIVAL } from "@/config/festival";
 import { useAuth } from "@/lib/supabase/auth-context";
 
 export default function Home() {
+  const router = useRouter();
   const { user } = useAuth();
+  const [tapCount, setTapCount] = useState(0);
+
+  const handleSecretTap = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const next = tapCount + 1;
+    if (next >= 5) {
+      setTapCount(0);
+      router.push("/admin");
+    } else {
+      setTapCount(next);
+      setTimeout(() => setTapCount(0), 3000);
+    }
+  };
 
   return (
-    <main className="mandala min-h-screen overflow-hidden">
-      <div className="mx-auto flex min-h-screen max-w-6xl flex-col justify-between px-6 py-7">
+    <main className="mandala min-h-screen overflow-hidden flex flex-col justify-between">
+      <div className="mx-auto flex w-full max-w-6xl flex-col justify-between px-6 py-7 flex-1">
         <header className="flex items-center justify-between border-b border-white/5 pb-4">
           <div className="flex items-center gap-3">
-            <div className="text-xl font-black">
-              🪩 <span className="text-[#ffd166]">Garba</span>Mate
+            <div className="text-xl font-black flex items-center gap-1.5">
+              <span
+                onClick={handleSecretTap}
+                className="cursor-pointer select-none active:scale-95 transition"
+                title="GarbaMate"
+              >
+                🪩
+              </span>
+              <span>
+                <span className="text-[#ffd166]">Garba</span>Mate
+              </span>
             </div>
           </div>
 
@@ -121,6 +146,23 @@ export default function Home() {
           </div>
         </section>
       </div>
+
+      <footer className="mx-auto w-full max-w-6xl px-6 py-6 text-center text-xs text-[#73789e] border-t border-white/5">
+        <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
+          <Link href="/privacy" className="hover:text-[#ffd166]">Privacy</Link>
+          <span>•</span>
+          <Link href="/terms" className="hover:text-[#ffd166]">Terms</Link>
+          <span>•</span>
+          <Link href="/guidelines" className="hover:text-[#ffd166]">Guidelines</Link>
+          <span>•</span>
+          <Link href="/admin" className="text-[#73789e]/60 hover:text-[#ffd166] flex items-center gap-1">
+            <span>🔒</span> Admin
+          </Link>
+        </div>
+        <p className="mt-2 text-[10px] text-[#73789e]/50">
+          GarbaMate — BMS College of Engineering Navratri 2026
+        </p>
+      </footer>
     </main>
   );
 }

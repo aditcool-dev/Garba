@@ -8,4 +8,19 @@ button, input, select, textarea { font: inherit; }
 button { cursor: pointer; }
 .touch-target { min-height: 44px; min-width: 44px; }
 input, select, textarea { color-scheme: dark; }
+select {
+  background-color: #161a3d;
+  color: #f8f7ff;
+}
+select option {
+  background-color: #161a3d !important;
+  color: #f8f7ff !important;
+  padding: 8px 12px;
+}
+select option:hover,
+select option:focus,
+select option:checked {
+  background-color: #2e265c !important;
+  color: #ffd166 !important;
+}
 .mandala { background-image: radial-gradient(circle at center, transparent 0 38%, rgba(255, 209, 102, .08) 39% 40%, transparent 41% 58%, rgba(243, 92, 168, .08) 59% 60%, transparent 61%); }
