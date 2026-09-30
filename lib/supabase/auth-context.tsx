@@ -50,6 +50,7 @@ interface AuthContextType {
   isConfigured: boolean;
   signInWithGoogle: () => Promise<{ error: string | null }>;
   signInWithOtp: (email: string) => Promise<{ error: string | null; message?: string }>;
+  verifyOtp: (email: string, token: string) => Promise<{ error: string | null; onboardingComplete?: boolean }>;
   signUpWithPassword: (email: string, password: string, firstName: string) => Promise<{ error: string | null; message?: string }>;
   signInWithPassword: (email: string, password: string) => Promise<{ error: string | null; onboardingComplete?: boolean }>;
   demoLogin: (email?: string, name?: string) => Promise<void>;
@@ -182,63 +183,92 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         const { error } = await client.auth.signInWithOtp({
           email: trimmed,
           options: {
+            shouldCreateUser: true,
             emailRedirectTo: typeof window !== "undefined" ? `${window.location.origin}/auth/callback?next=/discover` : undefined,
           },
         });
-        if (!error) return { error: null, message: "Magic link sent to your college inbox! Check your email." };
+        if (error) {
+          return { error: error.message };
+        }
+        return {
+          error: null,
+          message: `A 6-digit verification code has been sent to ${trimmed}. Check your inbox!`,
+        };
       } catch (e: any) {
-        console.warn("Supabase signInWithOtp failed, falling back:", e);
+        return { error: e?.message || "Could not send verification code" };
       }
     }
 
-    // Direct verified college access
-    const parsed = parseCollegeEmail(trimmed);
-    const branch = (parsed.branch && BRANCH_CODES[parsed.branch]) || "CSE";
-    const year = parsed.admissionYear ? Math.max(1, Math.min(4, 2026 - parsed.admissionYear + 1)) : 2;
-    const existing = getLocalAccounts().find((a) => a.email === trimmed);
-    const userId = existing?.id || `user-${Date.now()}`;
-    if (!existing) {
-      saveLocalAccount({
-        id: userId,
-        email: trimmed,
-        password: "magic-link-verified",
-        firstName: trimmed.split("@")[0].split(".")[0],
-        createdAt: new Date().toISOString(),
-      });
+    return { error: "Supabase connection is not available." };
+  };
+
+  const verifyOtp = async (
+    email: string,
+    token: string
+  ): Promise<{ error: string | null; onboardingComplete?: boolean }> => {
+    const trimmedEmail = email.trim().toLowerCase();
+    const trimmedToken = token.trim();
+    if (!trimmedEmail || !trimmedToken) {
+      return { error: "Please enter your college email and the 6-digit code." };
     }
 
-    const session: UserSession = { id: userId, email: trimmed };
-    localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(session));
-    setUser(session);
-    let p = await db.getProfileById(userId);
-    if (!p) {
-      p = {
-        id: userId,
-        first_name: trimmed.split("@")[0].split(".")[0],
-        age: 20,
-        gender: "Prefer not to say",
-        branch,
-        year,
-        bio: "",
-        experience: "Beginner",
-        styles: ["Traditional Garba"],
-        looking_for: ["Garba partner"],
-        available_nights: [1, 2, 3],
-        interests: ["dance"],
-        partner_preference: "Everyone",
-        photo_path: "🌸",
-        is_hidden: false,
-        is_suspended: false,
-        is_banned: false,
-        onboarding_complete: false,
-        is_demo: false,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      await db.upsertProfile(p);
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data, error } = await client.auth.verifyOtp({
+          email: trimmedEmail,
+          token: trimmedToken,
+          type: "email",
+        });
+
+        if (error) {
+          return { error: error.message };
+        }
+
+        if (data?.user) {
+          const session: UserSession = { id: data.user.id, email: data.user.email ?? trimmedEmail };
+          localStorage.setItem(LOCAL_SESSION_KEY, JSON.stringify(session));
+          setUser(session);
+
+          let p = await db.getProfileById(data.user.id);
+          if (!p) {
+            const parsed = parseCollegeEmail(trimmedEmail);
+            const branch = (parsed.branch && BRANCH_CODES[parsed.branch]) || "CSE";
+            const year = parsed.admissionYear ? Math.max(1, Math.min(4, 2026 - parsed.admissionYear + 1)) : 2;
+            p = {
+              id: data.user.id,
+              first_name: trimmedEmail.split("@")[0].split(".")[0],
+              age: 20,
+              gender: "Prefer not to say",
+              branch,
+              year,
+              bio: "Ready for BMSCE Garba nights!",
+              experience: "Beginner",
+              styles: ["Traditional Garba"],
+              looking_for: ["Garba partner"],
+              available_nights: [1, 2, 3],
+              interests: ["dance"],
+              partner_preference: "Everyone",
+              photo_path: "🌸",
+              is_hidden: false,
+              is_suspended: false,
+              is_banned: false,
+              onboarding_complete: false,
+              is_demo: false,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            await db.upsertProfile(p);
+          }
+          setProfile(p);
+          return { error: null, onboardingComplete: p.onboarding_complete };
+        }
+      } catch (err: any) {
+        return { error: err?.message || "Verification failed" };
+      }
     }
-    setProfile(p);
-    return { error: null, message: "College email verified! Redirecting..." };
+
+    return { error: "Supabase connection is not available." };
   };
 
   const signUpWithPassword = async (
@@ -490,6 +520,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isConfigured,
         signInWithGoogle,
         signInWithOtp,
+        verifyOtp,
         signUpWithPassword,
         signInWithPassword,
         demoLogin,

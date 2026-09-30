@@ -52,18 +52,24 @@ export default function Onboarding() {
   );
   const [photo, setPhoto] = useState<string>(existingProfile?.photo_path || "🌸");
   const [uploading, setUploading] = useState(false);
+  const [uploadSuccess, setUploadSuccess] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
+    setUploadError(null);
+    setUploadSuccess(false);
+
     const userId = user?.id || "student-temp";
     const { url, error } = await uploadAvatar(userId, file);
     if (!error && url) {
       setPhoto(url);
+      setUploadSuccess(true);
     } else {
-      alert(error || "Upload failed");
+      setUploadError(error || "Could not process photo");
     }
     setUploading(false);
   };
@@ -166,9 +172,9 @@ export default function Onboarding() {
                 )}
               </div>
 
-              <div>
+              <div className="flex flex-col items-center gap-2">
                 <label className="cursor-pointer rounded-full bg-[#292d58] hover:bg-[#343a6d] px-5 py-2.5 text-xs font-bold text-white transition inline-block">
-                  {uploading ? "Uploading..." : "📷 Upload Custom Photo"}
+                  {uploading ? "Compressing & Uploading..." : "📷 Upload Custom Photo"}
                   <input
                     type="file"
                     accept="image/*"
@@ -177,6 +183,16 @@ export default function Onboarding() {
                     className="hidden"
                   />
                 </label>
+                {uploadSuccess && (
+                  <span className="text-[11px] text-emerald-400 font-semibold flex items-center gap-1">
+                    ✓ Photo compressed & attached!
+                  </span>
+                )}
+                {uploadError && (
+                  <span className="text-[11px] text-red-400 font-medium">
+                    {uploadError}
+                  </span>
+                )}
               </div>
 
               <div className="text-center">

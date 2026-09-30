@@ -8,10 +8,12 @@ import { useAuth } from "@/lib/supabase/auth-context";
 
 export default function Login() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithOtp, signInWithPassword } = useAuth();
+  const { signInWithGoogle, signInWithOtp, verifyOtp, signInWithPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [authMode, setAuthMode] = useState<"password" | "magic">("password");
+  const [otpCode, setOtpCode] = useState("");
+  const [otpSent, setOtpSent] = useState(false);
+  const [authMode, setAuthMode] = useState<"otp" | "password">("otp");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -23,6 +25,38 @@ export default function Login() {
     if (err) {
       setError(err);
       setLoading(false);
+    }
+  };
+
+  const handleSendOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return;
+    setLoading(true);
+    setError(null);
+    setMessage(null);
+
+    const { error: err, message: msg } = await signInWithOtp(email.trim());
+    setLoading(false);
+    if (err) {
+      setError(err);
+    } else {
+      setOtpSent(true);
+      setMessage(msg || `6-digit verification code sent to ${email.trim()}!`);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!email.trim() || !otpCode.trim()) return;
+    setLoading(true);
+    setError(null);
+
+    const { error: err, onboardingComplete } = await verifyOtp(email.trim(), otpCode.trim());
+    setLoading(false);
+    if (err) {
+      setError(err);
+    } else {
+      router.push(onboardingComplete ? "/discover" : "/onboarding");
     }
   };
 
@@ -39,22 +73,6 @@ export default function Login() {
       setError(err);
     } else {
       router.push(onboardingComplete ? "/discover" : "/onboarding");
-    }
-  };
-
-  const handleOtp = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email) return;
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-
-    const { error: err, message: msg } = await signInWithOtp(email);
-    setLoading(false);
-    if (err) {
-      setError(err);
-    } else {
-      setMessage(msg || "Check your email for the magic link. You will be redirected after verification.");
     }
   };
 
@@ -96,37 +114,133 @@ export default function Login() {
 
         <div className="my-6 flex items-center gap-3 text-xs text-[#73789e]">
           <span className="h-px flex-1 bg-white/10" />
-          OR WITH EMAIL
+          OR VERIFY WITH COLLEGE EMAIL
           <span className="h-px flex-1 bg-white/10" />
         </div>
 
         {/* Mode Toggle */}
-        <div className="mt-6 flex rounded-xl bg-white/5 p-1 border border-white/10">
+        <div className="mt-4 flex rounded-xl bg-white/5 p-1 border border-white/10">
           <button
             type="button"
-            onClick={() => setAuthMode("password")}
+            onClick={() => {
+              setAuthMode("otp");
+              setError(null);
+              setMessage(null);
+            }}
+            className={`flex-1 rounded-lg py-2 text-xs font-bold transition ${
+              authMode === "otp"
+                ? "bg-[#ffd166] text-black shadow"
+                : "text-[#aab0d0] hover:text-white"
+            }`}
+          >
+            ✉️ College Email Link / Code
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAuthMode("password");
+              setError(null);
+              setMessage(null);
+            }}
             className={`flex-1 rounded-lg py-2 text-xs font-bold transition ${
               authMode === "password"
                 ? "bg-[#ffd166] text-black shadow"
                 : "text-[#aab0d0] hover:text-white"
             }`}
           >
-            Password Sign In
-          </button>
-          <button
-            type="button"
-            onClick={() => setAuthMode("magic")}
-            className={`flex-1 rounded-lg py-2 text-xs font-bold transition ${
-              authMode === "magic"
-                ? "bg-[#ffd166] text-black shadow"
-                : "text-[#aab0d0] hover:text-white"
-            }`}
-          >
-            Magic Link
+            🔑 Password
           </button>
         </div>
 
-        {authMode === "password" ? (
+        {/* 6-Digit Code Mode (OTP) */}
+        {authMode === "otp" ? (
+          !otpSent ? (
+            <form onSubmit={handleSendOtp} className="mt-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-[#c5c9e8]">
+                  Official College Email (@bmsce.ac.in)
+                </label>
+                <input
+                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm outline-none focus:border-[#ffd166] text-white"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="e.g. yourname.cs24@bmsce.ac.in"
+                  required
+                />
+                <p className="mt-1.5 text-[11px] text-[#73789e]">
+                  We will send a 6-digit code to this inbox to verify ownership.
+                </p>
+              </div>
+
+              <Button
+                type="submit"
+                disabled={loading || !email.trim()}
+                className="w-full text-sm font-bold bg-[#ffd166] text-black hover:bg-[#ffd166]/90"
+              >
+                {loading ? "Sending Code..." : "Send 6-Digit Verification Code →"}
+              </Button>
+            </form>
+          ) : (
+            <form onSubmit={handleVerifyOtp} className="mt-5 space-y-4">
+              <div className="rounded-xl border border-[#ffd166]/30 bg-[#ffd166]/10 p-3.5 text-xs text-[#ffd166]">
+                <p className="font-bold flex items-center gap-1.5 mb-1">
+                  <span>📬</span> Verification email sent to {email}
+                </p>
+                <p className="text-[#e2e4f0] leading-relaxed">
+                  You can <b>click the "Sign in" link in your email</b> to log in directly! Or, if your email includes a 6-digit code, enter it below:
+                </p>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-[#c5c9e8]">
+                    Enter 6-Digit Code (Optional)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setOtpSent(false);
+                      setOtpCode("");
+                    }}
+                    className="text-[11px] text-[#ffd166] hover:underline"
+                  >
+                    Change email
+                  </button>
+                </div>
+                <input
+                  className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 p-3.5 text-center text-2xl font-mono font-black tracking-[0.3em] outline-none focus:border-[#ffd166] text-white"
+                  type="text"
+                  maxLength={6}
+                  value={otpCode}
+                  onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                  placeholder="••••••"
+                  autoFocus
+                />
+              </div>
+
+              <Button
+                type="submit"
+                disabled={loading || otpCode.length < 6}
+                className="w-full text-sm font-bold bg-[#ffd166] text-black hover:bg-[#ffd166]/90"
+              >
+                {loading ? "Verifying..." : "Verify Code & Sign In 🪩"}
+              </Button>
+
+              <div className="text-center">
+                <button
+                  type="button"
+                  onClick={handleSendOtp}
+                  disabled={loading}
+                  className="text-xs text-[#aab0d0] hover:text-[#ffd166] transition underline"
+                >
+                  Resend 6-digit code
+                </button>
+              </div>
+            </form>
+          )
+        ) : (
+          /* Password Mode */
           <form onSubmit={handlePasswordLogin} className="mt-5 space-y-4">
             <div>
               <label className="block text-xs font-semibold text-[#c5c9e8]">
@@ -137,7 +251,7 @@ export default function Login() {
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. aditya.cs23@bmsce.ac.in"
+                placeholder="e.g. yourname.cs23@bmsce.ac.in"
                 required
               />
             </div>
@@ -161,32 +275,7 @@ export default function Login() {
               disabled={loading}
               className="w-full text-sm font-bold bg-[#ffd166] text-black hover:bg-[#ffd166]/90"
             >
-              {loading ? "Signing in..." : "Sign In"}
-            </Button>
-          </form>
-        ) : (
-          <form onSubmit={handleOtp} className="mt-5 space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#c5c9e8]">
-                College Email (@bmsce.ac.in)
-              </label>
-              <input
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm outline-none focus:border-[#ffd166] text-white"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. aditya.cs23@bmsce.ac.in"
-                required
-              />
-            </div>
-
-            <Button
-              type="submit"
-              variant="secondary"
-              disabled={loading}
-              className="w-full text-sm font-bold"
-            >
-              {loading ? "Sending..." : "Send Magic Link"}
+              {loading ? "Signing in..." : "Sign In with Password"}
             </Button>
           </form>
         )}
