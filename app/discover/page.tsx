@@ -19,18 +19,35 @@ export default function Discover() {
   const [filterBranch, setFilterBranch] = useState<string>("All");
   const [filterNight, setFilterNight] = useState<number | "All">("All");
   const [loginPrompt, setLoginPrompt] = useState(false);
+  const [incomingCount, setIncomingCount] = useState(0);
+  const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
 
   useEffect(() => {
+    let unsubInterests: (() => void) | null = null;
+
     async function load() {
       if (!user) {
         setPublicNames(await db.getPublicProfileNames());
         setProfiles([]);
         return;
       }
-      const data = await db.getProfiles();
+      const [data, incoming] = await Promise.all([
+        db.getProfiles(),
+        db.getIncomingInterests(user.id),
+      ]);
       setProfiles(data.filter((p) => p.id !== user.id));
+      setIncomingCount(incoming.length);
+
+      unsubInterests = db.subscribeToInterests(user.id, async () => {
+        const freshIncoming = await db.getIncomingInterests(user.id);
+        setIncomingCount(freshIncoming.length);
+      });
     }
     load();
+
+    return () => {
+      if (unsubInterests) unsubInterests();
+    };
   }, [user]);
 
   const activeProfiles = profiles.filter((p) => {
@@ -70,6 +87,9 @@ export default function Discover() {
       const res = await db.likeProfile(user.id, person.id, "interested");
       if (res.matched) {
         setMatchPopup({ person, matchId: res.matchId || person.id });
+      } else {
+        setFeedbackToast(`⚡ Interested sent to ${person.first_name}! They will see your profile.`);
+        setTimeout(() => setFeedbackToast(null), 3500);
       }
     } else {
       await db.passProfile(user.id, person.id);
@@ -81,6 +101,38 @@ export default function Discover() {
   return (
     <AppShell title="Discover">
       <div className="mx-auto max-w-lg">
+        {/* Toast */}
+        {feedbackToast && (
+          <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 rounded-2xl bg-[#ffd166] text-black font-extrabold px-4 py-2.5 text-xs shadow-2xl animate-in fade-in slide-in-from-top-3 flex items-center gap-2">
+            <span>🎉</span>
+            <span>{feedbackToast}</span>
+          </div>
+        )}
+
+        {/* Incoming Interests Banner */}
+        {user && incomingCount > 0 && (
+          <Link
+            href="/matches?tab=interests"
+            className="mb-5 flex items-center justify-between rounded-2xl bg-gradient-to-r from-amber-500/25 via-[#ffd166]/20 to-rose-500/25 border border-amber-400/40 p-3.5 px-4 text-xs hover:border-[#ffd166] transition group shadow-lg"
+          >
+            <div className="flex items-center gap-3">
+              <span className="flex h-8 w-8 items-center justify-center rounded-xl bg-amber-400/30 text-lg shadow-sm">
+                ⚡
+              </span>
+              <div>
+                <p className="font-extrabold text-white text-sm">
+                  {incomingCount} student{incomingCount === 1 ? "" : "s"} showed interest in you!
+                </p>
+                <p className="text-[11px] text-[#ffd166]">
+                  Review their dance style & nights to match back
+                </p>
+              </div>
+            </div>
+            <span className="rounded-xl bg-[#ffd166] text-black font-extrabold px-3 py-1.5 text-xs group-hover:scale-105 transition-transform">
+              Review →
+            </span>
+          </Link>
+        )}
         {!user && (
           <Card className="mb-5 overflow-hidden border-[#ffd166]/30 bg-gradient-to-r from-[#21183e] to-[#172147] p-5">
             <div className="flex items-start gap-3">

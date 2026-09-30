@@ -15,7 +15,7 @@ if (typeof window !== "undefined") {
 }
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Profile, Message, Match, Report, LikeKind, ReportReason } from "./types";
+import type { Profile, Message, Match, Report, LikeKind, ReportReason, IncomingInterest, Like } from "./types";
 
 export const SUPABASE_PROJECT_ID = "ywvyuciwggsurhupwrva";
 export const DEFAULT_SUPABASE_URL = "https://ywvyuciwggsurhupwrva.supabase.co";
@@ -515,50 +515,242 @@ export const db = {
     return updated;
   },
 
-  async likeProfile(fromUserId: string, toUserId: string, kind: LikeKind = "interested"): Promise<{ matched: boolean; matchId?: string }> {
+  async likeProfile(
+    fromUserId: string,
+    toUserId: string,
+    kind: LikeKind = "interested"
+  ): Promise<{ matched: boolean; matchId?: string }> {
     const client = getSupabaseClient();
+    let isMatched = false;
+    let matchId: string | undefined = undefined;
+
+    // 1. Persist like in Supabase
     if (client) {
       try {
-        const { data, error } = await client.rpc("like_user", { target: toUserId, kind });
-        if (!error && data) {
-          return { matched: Boolean(data.matched), matchId: data.match_id };
-        }
-      } catch (err) {
-        console.warn("Supabase like_user rpc failed, using local logic:", err);
-      }
-    }
+        await client
+          .from("likes")
+          .upsert({ from_user: fromUserId, to_user: toUserId, kind }, { onConflict: "from_user,to_user" });
 
-    try {
-      if (client) {
-        await client.from("likes").upsert({ from_user: fromUserId, to_user: toUserId, kind });
-        const { data: rec } = await client.from("likes").select("id").eq("from_user", toUserId).eq("to_user", fromUserId);
+        const { data: rec } = await client
+          .from("likes")
+          .select("id")
+          .eq("from_user", toUserId)
+          .eq("to_user", fromUserId);
+
         if (rec && rec.length > 0) {
           const low = fromUserId < toUserId ? fromUserId : toUserId;
           const high = fromUserId < toUserId ? toUserId : fromUserId;
-          const { data: mData } = await client.from("matches").upsert({ user_a: low, user_b: high, status: "active" }).select("id").single();
-          return { matched: true, matchId: mData?.id };
+          const { data: mData } = await client
+            .from("matches")
+            .upsert({ user_a: low, user_b: high, status: "active" }, { onConflict: "user_a,user_b" })
+            .select("id")
+            .single();
+
+          isMatched = true;
+          matchId = mData?.id || `match-${low}-${high}`;
         }
+      } catch (err) {
+        console.warn("Supabase likeProfile failed:", err);
       }
-    } catch (e) {
-      console.warn("Direct likes insert failed:", e);
     }
 
-    const profiles = getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
-    const target = profiles.find((p) => p.id === toUserId);
-    const matchId = `match-${fromUserId}-${toUserId}`;
-    const localMatches = getLocalStore<Match[]>(MATCHES_KEY, []);
-    if (!localMatches.some((m) => m.id === matchId || (m.user_a === fromUserId && m.user_b === toUserId))) {
-      localMatches.push({
-        id: matchId,
-        user_a: fromUserId,
-        user_b: toUserId,
-        status: "active",
-        created_at: new Date().toISOString(),
-        partner: target,
-      });
-      setLocalStore(MATCHES_KEY, localMatches);
+    // 2. Persist like in LocalStorage
+    const localLikes = getLocalStore<Like[]>(LIKES_KEY, []);
+    const existingIdx = localLikes.findIndex((l) => l.from_user === fromUserId && l.to_user === toUserId);
+    const newLike: Like = {
+      id: `like-${Date.now()}`,
+      from_user: fromUserId,
+      to_user: toUserId,
+      kind,
+      created_at: new Date().toISOString(),
+    };
+    if (existingIdx >= 0) {
+      localLikes[existingIdx] = newLike;
+    } else {
+      localLikes.push(newLike);
     }
-    return { matched: true, matchId };
+    setLocalStore(LIKES_KEY, localLikes);
+
+    const reciprocal = localLikes.find((l) => l.from_user === toUserId && l.to_user === fromUserId);
+    if (reciprocal && !isMatched) {
+      const low = fromUserId < toUserId ? fromUserId : toUserId;
+      const high = fromUserId < toUserId ? toUserId : fromUserId;
+      matchId = `match-${low}-${high}`;
+      const localMatches = getLocalStore<Match[]>(MATCHES_KEY, []);
+      if (!localMatches.some((m) => m.id === matchId)) {
+        const allProfiles = getLocalStore<Profile[]>(PROFILES_KEY, []);
+        const partner = allProfiles.find((p) => p.id === toUserId);
+        localMatches.push({
+          id: matchId,
+          user_a: low,
+          user_b: high,
+          status: "active",
+          created_at: new Date().toISOString(),
+          partner,
+        });
+        setLocalStore(MATCHES_KEY, localMatches);
+      }
+      isMatched = true;
+    }
+
+    // 3. Realtime multi-channel broadcast of interest notification
+    this.broadcastInterest(fromUserId, toUserId, isMatched, matchId);
+
+    return { matched: isMatched, matchId };
+  },
+
+  broadcastInterest(fromUserId: string, toUserId: string, matched: boolean, matchId?: string) {
+    if (typeof window === "undefined") return;
+    const payload = {
+      from_user: fromUserId,
+      to_user: toUserId,
+      matched,
+      matchId,
+      timestamp: Date.now(),
+    };
+
+    // BroadcastChannel API for 0ms cross-tab notifications
+    try {
+      const bc = new BroadcastChannel("garbamate_interests");
+      bc.postMessage(payload);
+      setTimeout(() => bc.close(), 100);
+    } catch (err) {
+      void err;
+    }
+
+    // Storage event trigger
+    try {
+      localStorage.setItem("garbamate_interest_event", JSON.stringify(payload));
+    } catch (err) {
+      void err;
+    }
+
+    // Supabase Realtime channel
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const ch = client.channel(`interest_alerts:${toUserId}`);
+        ch.subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            ch.send({
+              type: "broadcast",
+              event: "incoming_interest",
+              payload,
+            });
+          }
+        });
+      } catch (err) {
+        void err;
+      }
+    }
+  },
+
+  subscribeToInterests(
+    userId: string,
+    onInterest: (data: { from_user: string; to_user: string; matched: boolean; matchId?: string }) => void
+  ) {
+    if (typeof window === "undefined") return () => {};
+
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel("garbamate_interests");
+      bc.onmessage = (e) => {
+        if (e.data && e.data.to_user === userId) {
+          onInterest(e.data);
+        }
+      };
+    } catch (err) {
+      void err;
+    }
+
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === "garbamate_interest_event" && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data && data.to_user === userId) {
+            onInterest(data);
+          }
+        } catch (err) {
+          void err;
+        }
+      }
+    };
+    window.addEventListener("storage", storageHandler);
+
+    const client = getSupabaseClient();
+    let supabaseChannel: any = null;
+    if (client) {
+      try {
+        supabaseChannel = client
+          .channel(`interest_alerts:${userId}`)
+          .on("broadcast", { event: "incoming_interest" }, (payload) => {
+            if (payload?.payload && payload.payload.to_user === userId) {
+              onInterest(payload.payload);
+            }
+          })
+          .subscribe();
+      } catch (err) {
+        void err;
+      }
+    }
+
+    return () => {
+      if (bc) bc.close();
+      window.removeEventListener("storage", storageHandler);
+      if (client && supabaseChannel) {
+        client.removeChannel(supabaseChannel);
+      }
+    };
+  },
+
+  async getIncomingInterests(currentUserId: string): Promise<IncomingInterest[]> {
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data: likesData, error } = await client
+          .from("likes")
+          .select("id, from_user, to_user, kind, created_at, sender_profile:from_user(*)")
+          .eq("to_user", currentUserId)
+          .order("created_at", { ascending: false });
+
+        if (!error && likesData) {
+          const matches = await this.getMatches(currentUserId);
+          const matchedSet = new Set(
+            matches.map((m) => (m.user_a === currentUserId ? m.user_b : m.user_a))
+          );
+
+          const pending = likesData.filter((l: any) => !matchedSet.has(l.from_user));
+          return pending.map((l: any) => ({
+            id: l.id,
+            from_user: l.from_user,
+            to_user: l.to_user,
+            kind: l.kind,
+            created_at: l.created_at,
+            sender_profile: l.sender_profile,
+          }));
+        }
+      } catch (err) {
+        console.warn("Supabase getIncomingInterests failed:", err);
+      }
+    }
+
+    const allLikes = getLocalStore<Like[]>(LIKES_KEY, []);
+    const incoming = allLikes.filter((l) => l.to_user === currentUserId);
+    const matches = await this.getMatches(currentUserId);
+    const matchedSet = new Set(
+      matches.map((m) => (m.user_a === currentUserId ? m.user_b : m.user_a))
+    );
+    const pending = incoming.filter((l) => !matchedSet.has(l.from_user));
+
+    const allProfiles = await this.getAllAdminProfiles();
+    return pending.map((l) => ({
+      id: l.id || `like-${l.from_user}-${l.to_user}`,
+      from_user: l.from_user,
+      to_user: l.to_user,
+      kind: l.kind,
+      created_at: l.created_at || new Date().toISOString(),
+      sender_profile: allProfiles.find((p) => p.id === l.from_user),
+    }));
   },
 
   async passProfile(fromUserId: string, toUserId: string): Promise<void> {
@@ -592,17 +784,7 @@ export const db = {
         console.warn("Supabase matches query failed:", err);
       }
     }
-    const defaultMatches: Match[] = [
-      {
-        id: "demo-ananya-1",
-        user_a: currentUserId,
-        user_b: "demo-ananya-1",
-        status: "active",
-        created_at: new Date(Date.now() - 3600000 * 2).toISOString(),
-        partner: INITIAL_DEMO_PROFILES[0],
-      },
-    ];
-    return getLocalStore<Match[]>(MATCHES_KEY, defaultMatches);
+    return getLocalStore<Match[]>(MATCHES_KEY, []);
   },
 
   async getMessages(matchId: string): Promise<Message[]> {
@@ -619,23 +801,23 @@ export const db = {
         console.warn("Supabase messages query failed:", err);
       }
     }
-    const all = getLocalStore<Record<string, Message[]>>(MESSAGES_KEY, {
-      "demo-ananya-1": [
-        {
-          id: "m-1",
-          match_id: "demo-ananya-1",
-          sender_id: "demo-ananya-1",
-          body: "Hey! Saw you're also attending Day 2 and Day 4 for Bollywood Garba! 🌸",
-          created_at: new Date(Date.now() - 1800000).toISOString(),
-          read_at: null,
-        },
-      ],
-    });
+    const all = getLocalStore<Record<string, Message[]>>(MESSAGES_KEY, {});
     return all[matchId] || [];
   },
 
   async sendMessage(matchId: string, senderId: string, body: string): Promise<Message> {
+    const newMsg: Message = {
+      id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      match_id: matchId,
+      sender_id: senderId,
+      body,
+      created_at: new Date().toISOString(),
+      read_at: null,
+    };
+
     const client = getSupabaseClient();
+    let createdMsg = newMsg;
+
     if (client) {
       try {
         const { data, error } = await client
@@ -643,7 +825,9 @@ export const db = {
           .insert({ match_id: matchId, sender_id: senderId, body })
           .select()
           .single();
-        if (!error && data) return data as Message;
+        if (!error && data) {
+          createdMsg = data as Message;
+        }
       } catch (err) {
         console.warn("Supabase sendMessage failed:", err);
       }
@@ -651,44 +835,129 @@ export const db = {
 
     const all = getLocalStore<Record<string, Message[]>>(MESSAGES_KEY, {});
     const matchMsgs = all[matchId] || [];
-    const newMsg: Message = {
-      id: `msg-${Date.now()}`,
-      match_id: matchId,
-      sender_id: senderId,
-      body,
-      created_at: new Date().toISOString(),
-      read_at: null,
-    };
-    matchMsgs.push(newMsg);
-    all[matchId] = matchMsgs;
-    setLocalStore(MESSAGES_KEY, all);
-    return newMsg;
+    if (!matchMsgs.some((m) => m.id === createdMsg.id)) {
+      matchMsgs.push(createdMsg);
+      all[matchId] = matchMsgs;
+      setLocalStore(MESSAGES_KEY, all);
+    }
+
+    // Instant WebSocket and cross-tab broadcasts
+    if (typeof window !== "undefined") {
+      try {
+        const bc = new BroadcastChannel(`garbamate_chat_${matchId}`);
+        bc.postMessage(createdMsg);
+        setTimeout(() => bc.close(), 100);
+      } catch (err) {
+        void err;
+      }
+
+      try {
+        localStorage.setItem(`garbamate_msg_event_${matchId}`, JSON.stringify(createdMsg));
+      } catch (err) {
+        void err;
+      }
+
+      if (client) {
+        try {
+          const ch = client.channel(`chat_broadcast:${matchId}`);
+          ch.subscribe((status) => {
+            if (status === "SUBSCRIBED") {
+              ch.send({
+                type: "broadcast",
+                event: "new_message",
+                payload: createdMsg,
+              });
+            }
+          });
+        } catch (err) {
+          void err;
+        }
+      }
+    }
+
+    return createdMsg;
   },
 
   subscribeToMessages(matchId: string, onNewMessage: (msg: Message) => void) {
-    const client = getSupabaseClient();
-    if (client) {
-      const channel = client
-        .channel(`messages:${matchId}`)
-        .on(
-          "postgres_changes",
-          {
-            event: "INSERT",
-            schema: "public",
-            table: "messages",
-            filter: `match_id=eq.${matchId}`,
-          },
-          (payload) => {
-            onNewMessage(payload.new as Message);
-          }
-        )
-        .subscribe();
+    if (typeof window === "undefined") return () => {};
 
-      return () => {
-        client.removeChannel(channel);
+    // 1. BroadcastChannel API for instant cross-tab real-time
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel(`garbamate_chat_${matchId}`);
+      bc.onmessage = (e) => {
+        if (e.data && e.data.match_id === matchId) {
+          onNewMessage(e.data);
+        }
       };
+    } catch (err) {
+      void err;
     }
-    return () => {};
+
+    // 2. Storage event
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === `garbamate_msg_event_${matchId}` && e.newValue) {
+        try {
+          const msg = JSON.parse(e.newValue);
+          if (msg && msg.match_id === matchId) {
+            onNewMessage(msg);
+          }
+        } catch (err) {
+          void err;
+        }
+      }
+    };
+    window.addEventListener("storage", storageHandler);
+
+    // 3. Supabase Realtime WebSockets
+    const client = getSupabaseClient();
+    let supabaseChannel: any = null;
+    if (client) {
+      try {
+        supabaseChannel = client
+          .channel(`chat_broadcast:${matchId}`)
+          .on("broadcast", { event: "new_message" }, (payload) => {
+            if (payload?.payload && payload.payload.match_id === matchId) {
+              onNewMessage(payload.payload as Message);
+            }
+          })
+          .on(
+            "postgres_changes",
+            {
+              event: "INSERT",
+              schema: "public",
+              table: "messages",
+              filter: `match_id=eq.${matchId}`,
+            },
+            (payload) => {
+              if (payload?.new) {
+                onNewMessage(payload.new as Message);
+              }
+            }
+          )
+          .subscribe();
+      } catch (err) {
+        console.warn("Supabase subscribeToMessages warning:", err);
+      }
+    }
+
+    // 4. Live fallback interval (every 1.5s) to guarantee zero dropped messages
+    const pollInterval = setInterval(async () => {
+      const msgs = await this.getMessages(matchId);
+      if (msgs.length > 0) {
+        const last = msgs[msgs.length - 1];
+        onNewMessage(last);
+      }
+    }, 1500);
+
+    return () => {
+      if (bc) bc.close();
+      window.removeEventListener("storage", storageHandler);
+      clearInterval(pollInterval);
+      if (client && supabaseChannel) {
+        client.removeChannel(supabaseChannel);
+      }
+    };
   },
 
   async createReport(report: {

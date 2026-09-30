@@ -16,6 +16,7 @@ export default function ChatPage() {
 
   const [partner, setPartner] = useState<Profile | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
+  const [activeChatId, setActiveChatId] = useState<string>(matchId);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -23,6 +24,8 @@ export default function ChatPage() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    let unsubs: (() => void)[] = [];
+
     async function loadData() {
       if (!user) {
         setLoading(false);
@@ -35,12 +38,13 @@ export default function ChatPage() {
       if (!matchId || matchId === "demo" || matchId === "demo-ananya-1") {
         const matches = await db.getMatches(user.id);
         if (matches.length > 0) {
-          // Redirect to first actual match
           const first = matches[0];
           setPartner(first.partner || null);
+          setActiveChatId(first.id);
           const msgs = await db.getMessages(first.id);
           setMessages(msgs);
           setLoading(false);
+          setupSubscription(first.id);
           return;
         } else {
           setNotFound(true);
@@ -57,9 +61,11 @@ export default function ChatPage() {
 
       if (matched && matched.partner && matched.partner.id !== user.id) {
         setPartner(matched.partner);
+        setActiveChatId(matched.id);
         const msgs = await db.getMessages(matched.id);
         setMessages(msgs);
         setLoading(false);
+        setupSubscription(matched.id);
         return;
       }
 
@@ -67,30 +73,42 @@ export default function ChatPage() {
       const directProfile = await db.getProfileById(matchId);
       if (directProfile && directProfile.id !== user.id) {
         setPartner(directProfile);
+        setActiveChatId(matchId);
         const msgs = await db.getMessages(matchId);
         setMessages(msgs);
         setLoading(false);
+        setupSubscription(matchId);
         return;
       }
 
-      // Partner cannot be the logged-in user themselves or an invalid id
       setNotFound(true);
       setLoading(false);
     }
 
-    loadData();
-
-    if (matchId && matchId !== "demo") {
-      const unsubscribe = db.subscribeToMessages(matchId, (newMsg) => {
+    function setupSubscription(idToListen: string) {
+      if (!idToListen || idToListen === "demo") return;
+      
+      const onMsg = (newMsg: Message) => {
         setMessages((prev) => {
           if (prev.some((m) => m.id === newMsg.id)) return prev;
           return [...prev, newMsg];
         });
-      });
-      return () => {
-        unsubscribe();
       };
+
+      const unsub1 = db.subscribeToMessages(idToListen, onMsg);
+      unsubs.push(unsub1);
+
+      if (matchId && matchId !== idToListen) {
+        const unsub2 = db.subscribeToMessages(matchId, onMsg);
+        unsubs.push(unsub2);
+      }
     }
+
+    loadData();
+
+    return () => {
+      unsubs.forEach((fn) => fn());
+    };
   }, [matchId, user]);
 
   useEffect(() => {
@@ -105,7 +123,12 @@ export default function ChatPage() {
     const content = text.trim();
     setText("");
 
-    const newMsg = await db.sendMessage(matchId, user.id, content);
+    const targetId = activeChatId || matchId;
+    const newMsg = await db.sendMessage(targetId, user.id, content);
+    if (matchId && matchId !== targetId) {
+      await db.sendMessage(matchId, user.id, content);
+    }
+
     setMessages((prev) => {
       if (prev.some((m) => m.id === newMsg.id)) return prev;
       return [...prev, newMsg];

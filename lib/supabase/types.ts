@@ -35,6 +35,15 @@ export interface Like {
   created_at: string;
 }
 
+export interface IncomingInterest {
+  id: string;
+  from_user: string;
+  to_user: string;
+  kind: LikeKind;
+  created_at: string;
+  sender_profile?: Profile;
+}
+
 export interface Match {
   id: string;
   user_a: string;
