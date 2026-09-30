@@ -4,6 +4,7 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Nav } from "./nav";
+import { NotificationTab } from "./notification-tab";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { Button } from "./ui";
 
@@ -69,6 +70,7 @@ export function AppShell({
           <div className="flex items-center gap-2">
             {user ? (
               <div className="flex items-center gap-2">
+                <NotificationTab userId={user.id} />
                 <Link
                   href="/profile/me"
                   className="flex items-center gap-2.5 rounded-full bg-white/5 pl-1.5 pr-3.5 py-1 text-xs text-[#c5c9e8] hover:bg-white/10 border border-white/10 transition"

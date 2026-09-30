@@ -594,12 +594,40 @@ export const db = {
     }
 
     // 3. Realtime multi-channel broadcast of interest notification
-    this.broadcastInterest(fromUserId, toUserId, isMatched, matchId);
+    const senderProfile = await this.getProfileById(fromUserId);
+    this.broadcastInterest(fromUserId, toUserId, isMatched, matchId, senderProfile || undefined);
 
     return { matched: isMatched, matchId };
   },
 
-  broadcastInterest(fromUserId: string, toUserId: string, matched: boolean, matchId?: string) {
+  cacheIncomingInterest(userId: string, data: any) {
+    if (typeof window === "undefined") return;
+    try {
+      const key = `garbamate_cached_incoming_${userId}`;
+      const existing = getLocalStore<any[]>(key, []);
+      if (!existing.some((x) => x.from_user === data.from_user)) {
+        existing.unshift({
+          id: data.matchId || `like-${data.from_user}-${data.to_user}`,
+          from_user: data.from_user,
+          to_user: data.to_user,
+          kind: "interested",
+          created_at: new Date(data.timestamp || Date.now()).toISOString(),
+          sender_profile: data.sender_profile,
+        });
+        setLocalStore(key, existing);
+      }
+    } catch {
+      // ignore
+    }
+  },
+
+  broadcastInterest(
+    fromUserId: string,
+    toUserId: string,
+    matched: boolean,
+    matchId?: string,
+    senderProfile?: Profile
+  ) {
     if (typeof window === "undefined") return;
     const payload = {
       from_user: fromUserId,
@@ -607,6 +635,7 @@ export const db = {
       matched,
       matchId,
       timestamp: Date.now(),
+      sender_profile: senderProfile,
     };
 
     // BroadcastChannel API for 0ms cross-tab notifications
@@ -647,7 +676,7 @@ export const db = {
 
   subscribeToInterests(
     userId: string,
-    onInterest: (data: { from_user: string; to_user: string; matched: boolean; matchId?: string }) => void
+    onInterest: (data: { from_user: string; to_user: string; matched: boolean; matchId?: string; sender_profile?: Profile }) => void
   ) {
     if (typeof window === "undefined") return () => {};
 
@@ -656,6 +685,9 @@ export const db = {
       bc = new BroadcastChannel("garbamate_interests");
       bc.onmessage = (e) => {
         if (e.data && e.data.to_user === userId) {
+          if (e.data.sender_profile) {
+            this.cacheIncomingInterest(userId, e.data);
+          }
           onInterest(e.data);
         }
       };
@@ -668,6 +700,9 @@ export const db = {
         try {
           const data = JSON.parse(e.newValue);
           if (data && data.to_user === userId) {
+            if (data.sender_profile) {
+              this.cacheIncomingInterest(userId, data);
+            }
             onInterest(data);
           }
         } catch (err) {
@@ -685,6 +720,9 @@ export const db = {
           .channel(`interest_alerts:${userId}`)
           .on("broadcast", { event: "incoming_interest" }, (payload) => {
             if (payload?.payload && payload.payload.to_user === userId) {
+              if (payload.payload.sender_profile) {
+                this.cacheIncomingInterest(userId, payload.payload);
+              }
               onInterest(payload.payload);
             }
           })
@@ -709,10 +747,52 @@ export const db = {
       matches.map((m) => (m.user_a === currentUserId ? m.user_b : m.user_a))
     );
 
-    const likesMap = new Map<string, { id: string; from_user: string; to_user: string; kind: LikeKind; created_at: string }>();
-
-    // 1. Fetch from Supabase likes table
     const client = getSupabaseClient();
+
+    // 1. First attempt: call secure get_incoming_interests RPC
+    if (client) {
+      try {
+        const { data: rpcData, error: rpcError } = await client.rpc("get_incoming_interests");
+        if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
+          return rpcData.map((row: any) => ({
+            id: row.id,
+            from_user: row.from_user,
+            to_user: row.to_user,
+            kind: row.kind as LikeKind,
+            created_at: row.created_at,
+            sender_profile: {
+              id: row.from_user,
+              first_name: row.sender_first_name || "BMSCE Dancer",
+              photo_path: row.sender_photo_path || "💃",
+              branch: row.sender_branch || "BMSCE",
+              year: row.sender_year || 2,
+              bio: row.sender_bio || "",
+              styles: row.sender_styles || ["Traditional Garba"],
+              available_nights: row.sender_available_nights || [1, 2, 3],
+              experience: "Beginner",
+              looking_for: ["Garba partner"],
+              interests: ["garba"],
+              partner_preference: "Everyone",
+              is_hidden: false,
+              is_suspended: false,
+              is_banned: false,
+              onboarding_complete: true,
+              is_demo: false,
+              created_at: row.created_at,
+              updated_at: row.created_at,
+              age: 20,
+              gender: "Prefer not to say" as any,
+            },
+          }));
+        }
+      } catch (rpcErr) {
+        console.warn("get_incoming_interests RPC not available yet, using fallback query:", rpcErr);
+      }
+    }
+
+    const likesMap = new Map<string, { id: string; from_user: string; to_user: string; kind: LikeKind; created_at: string; sender_profile?: Profile }>();
+
+    // 2. Fallback: Fetch directly from Supabase likes table
     if (client) {
       try {
         const { data: likesData, error } = await client
@@ -739,7 +819,20 @@ export const db = {
       }
     }
 
-    // 2. Also merge from LocalStorage likes
+    // 3. Also merge from local cached real-time incoming interests
+    const cached = getLocalStore<any[]>(`garbamate_cached_incoming_${currentUserId}`, []);
+    cached.forEach((c) => {
+      if (
+        c.to_user === currentUserId &&
+        c.from_user !== currentUserId &&
+        !matchedPartnerIds.has(c.from_user) &&
+        !likesMap.has(c.from_user)
+      ) {
+        likesMap.set(c.from_user, c);
+      }
+    });
+
+    // 4. Also merge from LocalStorage likes
     const allLikes = getLocalStore<Like[]>(LIKES_KEY, []);
     allLikes.forEach((l) => {
       if (
@@ -758,18 +851,41 @@ export const db = {
       }
     });
 
-    // 3. Resolve profiles for each sender
+    // 5. Resolve profiles for each sender (with resilient fallback so interests never disappear)
     const results: IncomingInterest[] = [];
     const likesList = Array.from(likesMap.values());
 
     for (const item of likesList) {
-      const sender = await this.getProfileById(item.from_user);
-      if (sender) {
-        results.push({
-          ...item,
-          sender_profile: sender,
-        });
+      let sender = item.sender_profile || (await this.getProfileById(item.from_user));
+      if (!sender) {
+        sender = {
+          id: item.from_user,
+          first_name: "BMSCE Dancer",
+          photo_path: "💃",
+          branch: "BMSCE",
+          year: 2,
+          bio: "Interested in dancing with you at Garba!",
+          styles: ["Traditional Garba"],
+          available_nights: [1, 2, 3],
+          experience: "Beginner",
+          looking_for: ["Garba partner"],
+          interests: ["garba"],
+          partner_preference: "Everyone",
+          is_hidden: false,
+          is_suspended: false,
+          is_banned: false,
+          onboarding_complete: true,
+          is_demo: false,
+          created_at: item.created_at,
+          updated_at: item.created_at,
+          age: 20,
+          gender: "Prefer not to say" as any,
+        };
       }
+      results.push({
+        ...item,
+        sender_profile: sender,
+      });
     }
 
     return results;

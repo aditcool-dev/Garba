@@ -54,13 +54,11 @@ function MatchesContent() {
         setLoading(false);
 
         // Subscribe to real-time incoming interests
-        unsubInterests = db.subscribeToInterests(user.id, async (event) => {
+        unsubInterests = db.subscribeToInterests(user.id, async () => {
           const freshInterests = await db.getIncomingInterests(user.id);
           const freshMatches = await db.getMatches(user.id);
           setInterests(freshInterests);
           setMatches(freshMatches);
-          setActionNotice("🎉 Someone just showed interest in dancing with you!");
-          setTimeout(() => setActionNotice(null), 5000);
         });
       } else {
         setLoading(false);
@@ -137,19 +135,6 @@ function MatchesContent() {
             </Button>
           </Link>
         </div>
-
-        {/* Real-time Notification Banner */}
-        {actionNotice && (
-          <div className="rounded-2xl border border-amber-400/40 bg-amber-500/20 p-4 text-xs sm:text-sm font-semibold text-amber-200 flex items-center justify-between shadow-lg backdrop-blur-md animate-in fade-in slide-in-from-top-2">
-            <span>{actionNotice}</span>
-            <button
-              onClick={() => setActionNotice(null)}
-              className="text-xs opacity-75 hover:opacity-100 px-2 py-1"
-            >
-              ✕
-            </button>
-          </div>
-        )}
 
         {/* Tabs Switcher */}
         <div className="flex rounded-2xl bg-white/5 p-1.5 border border-white/10">
