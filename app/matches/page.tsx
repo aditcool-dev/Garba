@@ -9,6 +9,18 @@ import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
 import type { Match, IncomingInterest } from "@/lib/supabase/types";
 
+function isImageSrc(src?: string | null): boolean {
+  if (!src) return false;
+  const s = src.trim();
+  return (
+    s.startsWith("http://") ||
+    s.startsWith("https://") ||
+    s.startsWith("data:") ||
+    s.startsWith("/") ||
+    s.startsWith("blob:")
+  );
+}
+
 function MatchesContent() {
   const searchParams = useSearchParams();
   const initialTab = searchParams.get("tab") === "interests" ? "interests" : "matches";
@@ -228,7 +240,7 @@ function MatchesContent() {
                       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                         <div className="flex items-start gap-4">
                           <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#261942] text-3xl border border-white/10 overflow-hidden shadow-inner">
-                            {photo.startsWith("http") || photo.startsWith("data:") ? (
+                            {isImageSrc(photo) ? (
                               <img src={photo} alt={name} className="h-full w-full object-cover" />
                             ) : (
                               photo
@@ -337,7 +349,7 @@ function MatchesContent() {
                   >
                     <div className="flex items-center gap-4 min-w-0">
                       <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-[#33234c] text-3xl border border-white/10 overflow-hidden">
-                        {photo.startsWith("http") || photo.startsWith("data:") ? (
+                        {isImageSrc(photo) ? (
                           <img src={photo} alt={name} className="h-full w-full object-cover" />
                         ) : (
                           photo

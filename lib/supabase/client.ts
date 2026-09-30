@@ -704,53 +704,75 @@ export const db = {
   },
 
   async getIncomingInterests(currentUserId: string): Promise<IncomingInterest[]> {
+    const matches = await this.getMatches(currentUserId);
+    const matchedPartnerIds = new Set(
+      matches.map((m) => (m.user_a === currentUserId ? m.user_b : m.user_a))
+    );
+
+    const likesMap = new Map<string, { id: string; from_user: string; to_user: string; kind: LikeKind; created_at: string }>();
+
+    // 1. Fetch from Supabase likes table
     const client = getSupabaseClient();
     if (client) {
       try {
         const { data: likesData, error } = await client
           .from("likes")
-          .select("id, from_user, to_user, kind, created_at, sender_profile:from_user(*)")
+          .select("id, from_user, to_user, kind, created_at")
           .eq("to_user", currentUserId)
           .order("created_at", { ascending: false });
 
         if (!error && likesData) {
-          const matches = await this.getMatches(currentUserId);
-          const matchedSet = new Set(
-            matches.map((m) => (m.user_a === currentUserId ? m.user_b : m.user_a))
-          );
-
-          const pending = likesData.filter((l: any) => !matchedSet.has(l.from_user));
-          return pending.map((l: any) => ({
-            id: l.id,
-            from_user: l.from_user,
-            to_user: l.to_user,
-            kind: l.kind,
-            created_at: l.created_at,
-            sender_profile: l.sender_profile,
-          }));
+          likesData.forEach((l: any) => {
+            if (l.from_user !== currentUserId && !matchedPartnerIds.has(l.from_user)) {
+              likesMap.set(l.from_user, {
+                id: l.id,
+                from_user: l.from_user,
+                to_user: l.to_user,
+                kind: l.kind as LikeKind,
+                created_at: l.created_at,
+              });
+            }
+          });
         }
       } catch (err) {
-        console.warn("Supabase getIncomingInterests failed:", err);
+        console.warn("Supabase getIncomingInterests error:", err);
       }
     }
 
+    // 2. Also merge from LocalStorage likes
     const allLikes = getLocalStore<Like[]>(LIKES_KEY, []);
-    const incoming = allLikes.filter((l) => l.to_user === currentUserId);
-    const matches = await this.getMatches(currentUserId);
-    const matchedSet = new Set(
-      matches.map((m) => (m.user_a === currentUserId ? m.user_b : m.user_a))
-    );
-    const pending = incoming.filter((l) => !matchedSet.has(l.from_user));
+    allLikes.forEach((l) => {
+      if (
+        l.to_user === currentUserId &&
+        l.from_user !== currentUserId &&
+        !matchedPartnerIds.has(l.from_user) &&
+        !likesMap.has(l.from_user)
+      ) {
+        likesMap.set(l.from_user, {
+          id: l.id || `like-${l.from_user}-${l.to_user}`,
+          from_user: l.from_user,
+          to_user: l.to_user,
+          kind: l.kind,
+          created_at: l.created_at || new Date().toISOString(),
+        });
+      }
+    });
 
-    const allProfiles = await this.getAllAdminProfiles();
-    return pending.map((l) => ({
-      id: l.id || `like-${l.from_user}-${l.to_user}`,
-      from_user: l.from_user,
-      to_user: l.to_user,
-      kind: l.kind,
-      created_at: l.created_at || new Date().toISOString(),
-      sender_profile: allProfiles.find((p) => p.id === l.from_user),
-    }));
+    // 3. Resolve profiles for each sender
+    const results: IncomingInterest[] = [];
+    const likesList = Array.from(likesMap.values());
+
+    for (const item of likesList) {
+      const sender = await this.getProfileById(item.from_user);
+      if (sender) {
+        results.push({
+          ...item,
+          sender_profile: sender,
+        });
+      }
+    }
+
+    return results;
   },
 
   async passProfile(fromUserId: string, toUserId: string): Promise<void> {

@@ -9,6 +9,18 @@ import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
 import { uploadAvatar } from "@/lib/supabase/storage";
 
+function isImageSrc(src?: string | null): boolean {
+  if (!src) return false;
+  const s = src.trim();
+  return (
+    s.startsWith("http://") ||
+    s.startsWith("https://") ||
+    s.startsWith("data:") ||
+    s.startsWith("/") ||
+    s.startsWith("blob:")
+  );
+}
+
 const GARBA_STYLES = [
   "Traditional Garba",
   "Bollywood Garba",
@@ -165,7 +177,7 @@ export default function Onboarding() {
           {step === 1 && (
             <div className="mt-8 flex flex-col items-center gap-6">
               <div className="flex h-36 w-36 items-center justify-center rounded-full border-2 border-dashed border-[#f35ca8] bg-white/5 text-6xl overflow-hidden shadow-inner">
-                {photo.startsWith("http") || photo.startsWith("data:") ? (
+                {isImageSrc(photo) ? (
                   <img src={photo} alt="Avatar" className="h-full w-full object-cover" />
                 ) : (
                   photo
@@ -360,7 +372,7 @@ export default function Onboarding() {
           {step === 5 && (
             <div className="mt-7 rounded-2xl bg-white/5 p-5 border border-white/10 text-center">
               <div className="mx-auto flex h-24 w-24 items-center justify-center rounded-full bg-white/10 text-5xl overflow-hidden border border-white/20">
-                {photo.startsWith("http") || photo.startsWith("data:") ? (
+                {isImageSrc(photo) ? (
                   <img src={photo} alt="Avatar" className="h-full w-full object-cover" />
                 ) : (
                   photo
