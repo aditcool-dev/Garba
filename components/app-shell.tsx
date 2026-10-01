@@ -1,22 +1,70 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Nav } from "./nav";
 import { NotificationTab } from "./notification-tab";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { Button } from "./ui";
+import { AvatarFallback } from "./avatar-fallback";
+import { FESTIVAL } from "@/config/festival";
 
-function isImageSrc(src?: string | null): boolean {
-  if (!src) return false;
-  const s = src.trim();
+type FestivalState =
+  | { status: "countdown"; days: number; hours: number; minutes: number }
+  | { status: "live" }
+  | { status: "ended" };
+
+function getFestivalState(): FestivalState {
+  const target = Date.parse(FESTIVAL.startDate);
+  const remaining = target - Date.now();
+
+  if (!Number.isFinite(target) || Date.now() >= target + FESTIVAL.nights * 24 * 60 * 60 * 1000) {
+    return { status: "ended" };
+  }
+
+  if (remaining <= 0) {
+    return { status: "live" };
+  }
+
+  const totalMinutes = Math.floor(remaining / 60000);
+  return {
+    status: "countdown",
+    days: Math.floor(totalMinutes / (60 * 24)),
+    hours: Math.floor((totalMinutes % (60 * 24)) / 60),
+    minutes: totalMinutes % 60,
+  };
+}
+
+function CountdownPill() {
+  const [festivalState, setFestivalState] = useState<FestivalState | null>(null);
+
+  useEffect(() => {
+    const update = () => setFestivalState(getFestivalState());
+    update();
+
+    const timer = window.setInterval(update, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const label =
+    festivalState?.status === "countdown"
+      ? `${FESTIVAL.name} in ${festivalState.days}d ${String(festivalState.hours).padStart(2, "0")}h ${String(festivalState.minutes).padStart(2, "0")}m`
+      : festivalState?.status === "live"
+        ? `${FESTIVAL.name} is live`
+        : festivalState?.status === "ended"
+          ? `${FESTIVAL.name} · See you next time`
+        : `${FESTIVAL.name} · ${FESTIVAL.nights} nights`;
+
   return (
-    s.startsWith("http://") ||
-    s.startsWith("https://") ||
-    s.startsWith("data:") ||
-    s.startsWith("/") ||
-    s.startsWith("blob:")
+    <div
+      className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#ffd166]/20 bg-[#211952]/70 px-3.5 text-[11px] font-bold text-[#ffdca0] shadow-[0_8px_24px_rgba(0,0,0,0.15)]"
+      role="status"
+      aria-live="polite"
+      title={`${FESTIVAL.name} starts ${FESTIVAL.startDate}`}
+    >
+      <span className="text-sm" aria-hidden="true">✦</span>
+      <span>{label}</span>
+    </div>
   );
 }
 
@@ -27,33 +75,15 @@ export function AppShell({
   children: React.ReactNode;
   title?: string;
 }) {
-  const router = useRouter();
   const { user, profile, signOut } = useAuth();
-  const [tapCount, setTapCount] = useState(0);
-
-  const handleSecretTap = (e: React.MouseEvent) => {
-    const next = tapCount + 1;
-    if (next >= 5) {
-      e.preventDefault();
-      setTapCount(0);
-      router.push("/admin");
-    } else {
-      setTapCount(next);
-      setTimeout(() => setTapCount(0), 2500);
-    }
-  };
 
   return (
-    <div className="min-h-screen pb-20 md:pb-8 flex flex-col justify-between">
+    <div className="garba-app-shell flex min-h-screen flex-col justify-between pb-24 md:pb-0 md:pl-20">
       <div>
-        <header className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3 px-5 py-4 border-b border-white/5">
-          <div className="flex items-center gap-3">
-            <div
-              onClick={handleSecretTap}
-              className="text-xl font-black tracking-tight hover:opacity-90 flex items-center gap-1.5 cursor-pointer select-none"
-              title="GarbaMate"
-            >
-              <span className="active:scale-95 transition">
+        <header className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
+          <div className="flex min-w-0 items-center gap-3">
+            <div className="display-font flex shrink-0 select-none items-center gap-2 text-xl font-bold tracking-tight sm:text-2xl" title="GarbaMate">
+              <span className="text-2xl drop-shadow-[0_0_12px_rgba(255,209,102,0.25)] transition-transform active:scale-95" aria-hidden="true">
                 🪩
               </span>
               <span>
@@ -61,38 +91,36 @@ export function AppShell({
               </span>
             </div>
             {title && (
-              <span className="hidden sm:inline-block text-xs font-semibold px-2 py-0.5 rounded-full bg-white/10 text-[#aab0d0]">
+              <span className="hidden max-w-[13rem] truncate rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-[#aaa8d0] sm:inline-block">
                 {title}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1.5 sm:gap-2">
+          <div className="flex items-center gap-1 sm:gap-2">
             {user ? (
-              <div className="flex items-center gap-1.5 sm:gap-2">
-                <NotificationTab userId={user.id} />
+              <div className="flex items-center gap-1 sm:gap-2">
+                <div className="shell-notifications"><NotificationTab userId={user.id} /></div>
                 <Link
                   href="/profile/me"
-                  className="flex items-center gap-2 rounded-full bg-white/5 pl-1.5 pr-2.5 sm:pr-3.5 py-1 text-xs text-[#c5c9e8] hover:bg-white/10 border border-white/10 transition"
+                  className="flex min-h-12 min-w-12 items-center justify-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-1.5 text-xs text-[#cbc9e8] transition hover:border-white/20 hover:bg-white/10 sm:justify-start sm:pr-3.5"
                 >
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm overflow-hidden border border-white/20">
-                    {isImageSrc(profile?.photo_path) ? (
-                      <img
-                        src={profile!.photo_path!}
-                        alt={profile?.first_name || "Profile"}
-                        className="h-full w-full object-cover"
-                      />
-                    ) : (
-                      <span className="select-none">{profile?.photo_path || "👤"}</span>
-                    )}
-                  </div>
-                  <span className="font-semibold text-white max-w-[70px] sm:max-w-[120px] truncate">
+                  <AvatarFallback
+                    src={profile?.photo_path}
+                    name={profile?.first_name || user.email.split("@")[0]}
+                    fallback={profile?.photo_path || "👤"}
+                    alt={profile?.first_name || "Profile"}
+                    size="sm"
+                    className="subtle-ring h-8 w-8 border-0"
+                  />
+                  <span className="hidden max-w-[70px] truncate font-semibold text-white sm:inline sm:max-w-[120px]">
                     {profile?.first_name || user.email.split("@")[0]}
                   </span>
                 </Link>
                 <button
+                  type="button"
                   onClick={() => signOut()}
-                  className="rounded-full px-2 sm:px-3 py-1.5 text-xs font-medium text-[#ffd166] hover:bg-white/5"
+                  className="touch-target rounded-full px-2 text-xs font-semibold text-[#ffd166] transition hover:bg-white/5 sm:px-3"
                 >
                   Sign out
                 </button>
@@ -100,17 +128,20 @@ export function AppShell({
             ) : (
               <div className="flex items-center gap-2">
                 <Link href="/login">
-                  <Button className="min-h-9 px-4 text-xs">Sign In</Button>
+                  <Button className="px-4 text-xs">Sign In</Button>
                 </Link>
               </div>
             )}
           </div>
+          <div className="order-3 w-full sm:order-none sm:w-auto">
+            <CountdownPill />
+          </div>
         </header>
 
-        <main className="mx-auto max-w-5xl px-5 pt-6">{children}</main>
+        <main className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">{children}</main>
       </div>
 
-      <footer className="mx-auto w-full max-w-5xl px-5 pt-12 pb-6 text-center text-xs text-[#73789e]">
+      <footer className="mx-auto w-full max-w-6xl px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-12 text-center text-xs text-[#73789e] sm:px-6 md:pb-8 lg:px-8">
         <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
           <Link href="/privacy" className="hover:text-[#ffd166]">Privacy</Link>
           <span>•</span>

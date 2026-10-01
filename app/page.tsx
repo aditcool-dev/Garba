@@ -1,16 +1,66 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Button, Card, Badge } from "@/components/ui";
+import { Button } from "@/components/ui";
 import { FESTIVAL } from "@/config/festival";
 import { useAuth } from "@/lib/supabase/auth-context";
+
+type SampleCard = {
+  name: string;
+  meta: string;
+  vibe: string;
+  emoji: string;
+  className: string;
+  transform: string;
+};
+
+const SAMPLE_CARDS: SampleCard[] = [
+  {
+    name: "Maya",
+    meta: "CSE · Day 2",
+    vibe: "Fast garba",
+    emoji: "💃",
+    className: "from-[#542353] to-[#24164a]",
+    transform: "translate(-42%, 18px) rotate(-13deg) scale(.9)",
+  },
+  {
+    name: "Rohan",
+    meta: "ECE · Day 4",
+    vibe: "3-taali energy",
+    emoji: "🕺",
+    className: "from-[#293d68] to-[#17173e]",
+    transform: "translate(42%, 18px) rotate(13deg) scale(.9)",
+  },
+  {
+    name: "Aisha",
+    meta: "ISE · Days 2 + 7",
+    vibe: "Bollywood garba",
+    emoji: "🥻",
+    className: "from-[#6c2c59] via-[#30235b] to-[#161436]",
+    transform: "translateY(-2px) rotate(0deg)",
+  },
+];
+
+function getCountdownLabel(): string {
+  const target = Date.parse(FESTIVAL.startDate);
+  const remaining = target - Date.now();
+
+  if (!Number.isFinite(target)) return `${FESTIVAL.nights} nights of Garba`;
+  if (remaining <= 0) return `${FESTIVAL.name} is live`;
+
+  const totalMinutes = Math.floor(remaining / 60000);
+  const days = Math.floor(totalMinutes / (60 * 24));
+  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
+  return `${days}d ${String(hours).padStart(2, "0")}h to go`;
+}
 
 export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
   const [tapCount, setTapCount] = useState(0);
+  const [countdown, setCountdown] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -20,6 +70,13 @@ export default function Home() {
       }
     }
   }, [router]);
+
+  useEffect(() => {
+    const update = () => setCountdown(getCountdownLabel());
+    update();
+    const timer = window.setInterval(update, 60000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleSecretTap = (e: React.MouseEvent) => {
     const next = tapCount + 1;
@@ -34,140 +91,132 @@ export default function Home() {
   };
 
   return (
-    <main className="mandala min-h-screen overflow-hidden flex flex-col justify-between">
-      <div className="mx-auto flex w-full max-w-6xl flex-col justify-between px-6 py-7 flex-1">
-        <header className="flex items-center justify-between border-b border-white/5 pb-4">
-          <div className="flex items-center gap-3">
-            <div
-              onClick={handleSecretTap}
-              className="text-xl font-black flex items-center gap-1.5 cursor-pointer select-none"
-              title="GarbaMate"
-            >
-              <span className="active:scale-95 transition">
-                🪩
-              </span>
-              <span>
-                <span className="text-[#ffd166]">Garba</span>Mate
-              </span>
-            </div>
-          </div>
+    <main className="mandala min-h-screen overflow-hidden">
+      <div className="mx-auto flex w-full max-w-6xl flex-col px-4 pb-8 pt-5 sm:px-6 sm:pt-7 lg:px-8">
+        <header className="flex items-center justify-between gap-3 border-b border-white/[0.08] pb-4">
+          <button
+            type="button"
+            onClick={handleSecretTap}
+            className="display-font flex min-h-12 items-center gap-2 text-lg font-bold tracking-tight text-white"
+            title="GarbaMate"
+          >
+            <span className="text-2xl drop-shadow-[0_0_12px_rgba(255,209,102,0.3)]" aria-hidden="true">🪩</span>
+            <span><span className="text-[#ffd166]">Garba</span>Mate</span>
+          </button>
 
-          <div className="flex items-center gap-3">
-            {user ? (
-              <Link href="/discover">
-                <Button className="min-h-9 px-4 text-xs font-bold">Open Discover →</Button>
-              </Link>
-            ) : (
-              <div className="flex items-center gap-2">
-                <Link href="/login" className="text-sm font-semibold text-[#ffd166]">
-                  Sign in
-                </Link>
-              </div>
-            )}
-          </div>
+          {user ? (
+            <Link href="/discover" className="text-xs font-bold text-[#ffd166] transition hover:text-white">
+              Open app <span aria-hidden="true">↗</span>
+            </Link>
+          ) : (
+            <Link href="/login" className="rounded-full border border-white/10 bg-white/[0.05] px-4 py-2.5 text-xs font-bold text-white transition hover:border-[#ffd166]/40">
+              Sign in
+            </Link>
+          )}
         </header>
 
-        <section className="grid items-center gap-10 py-12 md:grid-cols-[1.1fr_.9fr] md:py-20">
-          <div>
-            <Badge className="bg-[#f35ca8]/20 text-[#ff9fcf] border border-[#f35ca8]/30">
-              BMSCE Navratri 2026
-            </Badge>
-            <h1 className="mt-5 text-5xl font-black leading-[1.02] md:text-7xl">
-              Find your
-              <br />
-              <span className="bg-gradient-to-r from-[#ffd166] via-[#ff8b4d] to-[#f35ca8] bg-clip-text text-transparent">
-                Garba partner.
-              </span>
+        <section className="grid items-center gap-8 py-7 sm:py-10 lg:grid-cols-[.95fr_1.05fr] lg:gap-12 lg:py-14">
+          <div className="order-2 lg:order-1">
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#ffd166]/20 bg-[#211952]/65 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffdca0]">
+              <span className="h-1.5 w-1.5 rounded-full bg-[#2dd4bf] shadow-[0_0_12px_rgba(45,212,191,.8)]" />
+              BMSCE students only
+            </div>
+            <h1 className="display-font mt-5 max-w-xl text-[2.7rem] font-bold leading-[.98] tracking-[-.06em] text-white sm:text-6xl lg:text-7xl">
+              Your people are
+              <span className="mt-1 block signature-text">on the floor.</span>
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-[#c5c9e8]">
-              Meet BMSCE students who match your nights, style, and energy. Connect safely with college-verified peers. Match. Meet safely. Garba. Repeat.
+            <p className="mt-5 max-w-lg text-sm leading-6 text-[#cbc9e8] sm:text-base">
+              A private, college-verified way to find your Navratri rhythm, compare nights, and meet a Garba partner before the dhol starts.
             </p>
 
-            <div className="mt-8 flex flex-wrap gap-3">
-              <Link href="/signup">
-                <Button>Create profile</Button>
+            <div className="mt-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <Link href={user ? "/discover" : "/signup"} className="w-full sm:w-auto">
+                <Button className="w-full px-6 sm:w-auto">
+                  {user ? "Find your next match" : "Create your profile"}
+                  <span aria-hidden="true">→</span>
+                </Button>
               </Link>
-              <Link href="/discover">
-                <Button variant="secondary">Explore profiles</Button>
+              <Link href="/discover" className="text-center text-xs font-bold text-[#aaa8d0] transition hover:text-white sm:px-3">
+                Browse the floor first
               </Link>
             </div>
 
-            <div className="mt-8 flex flex-wrap items-center gap-6 text-sm text-[#aab0d0]">
-              <span className="flex items-center gap-1.5">
-                <span>🔒</span> College-only verified access
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span>🛡️</span> Profiles locked to guests
-              </span>
-              <span className="flex items-center gap-1.5">
-                <span>⚡</span> Real-time chat & matches
-              </span>
+            <div className="mt-6 flex flex-wrap gap-x-4 gap-y-2 text-[11px] font-semibold text-[#aaa8d0]">
+              <span className="inline-flex items-center gap-1.5"><span className="text-[#2dd4bf]">✓</span> Verified campus access</span>
+              <span className="inline-flex items-center gap-1.5"><span className="text-[#ffd166]">✦</span> Match by nights</span>
+              <span className="inline-flex items-center gap-1.5"><span className="text-[#f35ca8]">♥</span> Chat after a match</span>
             </div>
           </div>
 
-          <Card className="relative overflow-hidden border-[#ffd166]/20 p-7 bg-gradient-to-br from-[#161a3d] to-[#0c0f26]">
-            <div className="absolute -right-12 -top-12 h-40 w-40 rounded-full bg-[#f35ca8]/20 blur-3xl" />
-            <p className="text-xs uppercase tracking-wider font-bold text-[#ffd166]">The floor is calling</p>
-            <h2 className="mt-2 text-3xl font-black">{FESTIVAL.name} starts soon 🕺</h2>
+          <div className="order-1 relative mx-auto h-[330px] w-full max-w-[430px] sm:h-[360px] lg:order-2">
+            <div className="absolute inset-x-8 top-8 h-56 rounded-full bg-[#e8459b]/20 blur-3xl" aria-hidden="true" />
+            <div className="absolute inset-x-10 bottom-2 h-16 rounded-full bg-[#ffd166]/10 blur-2xl" aria-hidden="true" />
 
-            <div className="mt-7 grid grid-cols-3 gap-3 text-center">
-              <div className="rounded-2xl bg-white/5 p-4 border border-white/5">
-                <b className="text-3xl text-[#ffd166]">9</b>
-                <p className="mt-1 text-xs text-[#aab0d0]">nights</p>
-              </div>
-              <div className="rounded-2xl bg-white/5 p-4 border border-white/5">
-                <b className="text-3xl text-[#ff8b4d]">∞</b>
-                <p className="mt-1 text-xs text-[#aab0d0]">new vibes</p>
-              </div>
-              <div className="rounded-2xl bg-white/5 p-4 border border-white/5">
-                <b className="text-3xl text-[#f35ca8]">1</b>
-                <p className="mt-1 text-xs text-[#aab0d0]">community</p>
-              </div>
-            </div>
+            {SAMPLE_CARDS.map((card, index) => (
+              <article
+                key={card.name}
+                className={`absolute left-1/2 top-4 h-[278px] w-[min(74vw,250px)] -translate-x-1/2 overflow-hidden rounded-[28px] border border-white/15 bg-gradient-to-br ${card.className} p-4 shadow-[0_24px_55px_rgba(0,0,0,.35)] transition-transform duration-300 ${index === 2 ? "z-20" : "z-10"}`}
+                style={{ transform: `translateX(-50%) ${card.transform}` }}
+              >
+                <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.15em] text-white/65">
+                  <span>GarbaMate</span>
+                  <span>{index === 2 ? "98% vibe" : "New"}</span>
+                </div>
+                <div className="mt-4 flex h-36 items-center justify-center rounded-[22px] border border-white/10 bg-black/10 text-7xl shadow-inner">
+                  <span aria-hidden="true">{card.emoji}</span>
+                </div>
+                <div className="mt-4 flex items-end justify-between gap-2">
+                  <div>
+                    <h2 className="display-font text-xl font-bold text-white">{card.name}</h2>
+                    <p className="mt-1 text-[11px] text-white/70">{card.meta}</p>
+                  </div>
+                  <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-[#ffdca0]">{card.vibe}</span>
+                </div>
+              </article>
+            ))}
 
-            <div className="mt-6 rounded-2xl bg-black/30 p-4 border border-white/10 text-xs text-[#c5c9e8] leading-5">
-              💡 <b>Privacy First:</b> Anonymous guests only see locked student avatars. To view full photos, bios, and message dancers, you must sign in with your BMSCE college email.
+            <div className="absolute bottom-0 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-[#100a2c]/90 px-3.5 py-2 text-[10px] font-bold text-[#cbc9e8] shadow-xl backdrop-blur-xl">
+              <span className="text-[#ffd166]">●</span> A little preview of your people
             </div>
-          </Card>
+          </div>
         </section>
 
-        <section className="grid gap-4 pb-6 text-center md:grid-cols-3">
-          <div className="rounded-2xl bg-white/5 p-5 border border-white/5">
-            <div className="text-3xl">✨</div>
-            <h3 className="mt-2 font-bold text-white">Build your vibe</h3>
-            <p className="mt-1 text-xs text-[#aab0d0]">
-              Choose your avatar, favourite styles, and attending nights.
-            </p>
+        <section className="grid gap-3 sm:grid-cols-[1.15fr_.85fr]">
+          <div className="rounded-[24px] border border-[#ffd166]/20 bg-[#211952]/55 p-4 shadow-[0_16px_40px_rgba(0,0,0,.16)] sm:p-5">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">The floor opens soon</p>
+                <h2 className="display-font mt-1 text-xl font-bold text-white">{FESTIVAL.name} 2026</h2>
+              </div>
+              <span className="rounded-full bg-[#ffd166]/10 px-2.5 py-1 text-[10px] font-bold text-[#ffdca0]">{countdown || `${FESTIVAL.nights} nights`}</span>
+            </div>
+            <div className="mt-4 grid grid-cols-3 gap-2 text-center">
+              <div className="rounded-2xl border border-white/10 bg-black/10 px-2 py-2.5"><b className="display-font text-lg text-[#ffd166]">9</b><p className="text-[10px] text-[#aaa8d0]">nights</p></div>
+              <div className="rounded-2xl border border-white/10 bg-black/10 px-2 py-2.5"><b className="display-font text-lg text-[#ff8b4d]">∞</b><p className="text-[10px] text-[#aaa8d0]">new vibes</p></div>
+              <div className="rounded-2xl border border-white/10 bg-black/10 px-2 py-2.5"><b className="display-font text-lg text-[#f35ca8]">1</b><p className="text-[10px] text-[#aaa8d0]">community</p></div>
+            </div>
           </div>
-          <div className="rounded-2xl bg-white/5 p-5 border border-white/5">
-            <div className="text-3xl">🔒</div>
-            <h3 className="mt-2 font-bold text-white">Protected Discovery</h3>
-            <p className="mt-1 text-xs text-[#aab0d0]">
-              Full profiles and photos are locked until you sign in with BMSCE.
-            </p>
-          </div>
-          <div className="rounded-2xl bg-white/5 p-5 border border-white/5">
-            <div className="text-3xl">💬</div>
-            <h3 className="mt-2 font-bold text-white">Realtime Chat</h3>
-            <p className="mt-1 text-xs text-[#aab0d0]">
-              Coordinate matching outfits and practice 3-taali spins in-app.
-            </p>
+
+          <div className="flex items-center gap-3 rounded-[24px] border border-[#2dd4bf]/20 bg-[#123e4a]/25 p-4 sm:p-5">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#2dd4bf]/10 text-xl" aria-hidden="true">🛡️</div>
+            <div>
+              <p className="text-xs font-bold text-[#73f4df]">Safety stays in the circle</p>
+              <p className="mt-1 text-[11px] leading-5 text-[#b4d9d7]">College email verification, private profiles, and public festival meetups by default.</p>
+            </div>
           </div>
         </section>
+
+        <footer className="mt-10 border-t border-white/[0.08] pt-5 text-center text-[10px] text-[#73789e]">
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <Link href="/privacy" className="hover:text-[#ffd166]">Privacy</Link>
+            <span>•</span>
+            <Link href="/terms" className="hover:text-[#ffd166]">Terms</Link>
+            <span>•</span>
+            <Link href="/guidelines" className="hover:text-[#ffd166]">Community guidelines</Link>
+          </div>
+          <p className="mt-2">GarbaMate · BMS College of Engineering Navratri 2026</p>
+        </footer>
       </div>
-
-      <footer className="mx-auto w-full max-w-6xl px-6 py-6 text-center text-xs text-[#73789e] border-t border-white/5">
-        <div className="flex flex-wrap items-center justify-center gap-4 text-[11px]">
-          <Link href="/privacy" className="hover:text-[#ffd166]">Privacy</Link>
-          <span>•</span>
-          <Link href="/terms" className="hover:text-[#ffd166]">Terms</Link>
-          <span>•</span>
-          <Link href="/guidelines" className="hover:text-[#ffd166]">Guidelines</Link>
-        </div>
-        <p className="mt-2 text-[10px] text-[#73789e]/50">
-          GarbaMate — BMS College of Engineering Navratri 2026
-        </p>
-      </footer>
     </main>
   );
 }

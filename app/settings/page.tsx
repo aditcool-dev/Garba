@@ -44,80 +44,32 @@ export default function Settings() {
 
   return (
     <AppShell title="Settings">
-      <div className="mx-auto max-w-xl">
-        <h1 className="text-3xl font-black">Your settings</h1>
+      <div className="mx-auto max-w-2xl pb-6">
+        <div className="flex items-end justify-between gap-3">
+          <div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#ffd166]">Your control room</p><h1 className="display-font mt-1 text-3xl font-bold text-white sm:text-4xl">Settings</h1><p className="mt-1.5 text-xs leading-5 text-[#aaa8d0]">Choose how visible you are and keep your campus experience comfortable.</p></div>
+          <Link href="/profile/me" className="hidden min-h-10 items-center rounded-full border border-white/10 px-3.5 py-2 text-xs font-bold text-[#cbc9e8] transition hover:bg-white/5 sm:inline-flex">View profile</Link>
+        </div>
 
-        {savedMsg && (
-          <div className="mt-4 rounded-xl bg-emerald-500/20 border border-emerald-500/30 p-3 text-xs text-emerald-200">
-            ✓ {savedMsg}
-          </div>
-        )}
+        {savedMsg && <div role="status" className="mt-5 rounded-2xl border border-[#2dd4bf]/25 bg-[#2dd4bf]/10 px-4 py-3 text-xs font-semibold text-[#b7f3e9]">✓ {savedMsg}</div>}
 
-        <div className="mt-6 grid gap-4">
-          <Card className="p-6">
-            <h2 className="font-bold text-lg">Discovery & Privacy</h2>
-            <label className="mt-5 flex items-center justify-between text-[#c5c9e8] cursor-pointer">
-              <div>
-                <span className="font-semibold text-white">Hide my profile</span>
-                <p className="mt-1 text-xs text-[#aab0d0]">
-                  You remain in existing matches and chats, but disappear from public discovery.
-                </p>
-              </div>
-              <input
-                type="checkbox"
-                checked={isHidden}
-                onChange={(e) => handleToggleHidden(e.target.checked)}
-                className="h-5 w-5 rounded accent-[#f35ca8] ml-4 cursor-pointer"
-              />
-            </label>
-
-            <div className="mt-6">
-              <label className="block text-sm font-semibold text-[#c5c9e8]">
-                Who should we show you in discovery?
+        <div className="mt-5 grid gap-4">
+          <Card className="p-0">
+            <div className="border-b border-white/10 p-5 sm:p-6"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#f35ca8]">Discovery</p><h2 className="display-font mt-1 text-xl font-bold text-white">Set your boundaries</h2><p className="mt-1 text-xs leading-5 text-[#aaa8d0]">These choices only affect new discovery. Existing matches and chats remain.</p></div>
+            <div className="divide-y divide-white/10">
+              <label className="flex cursor-pointer items-center justify-between gap-4 p-5 transition hover:bg-white/[0.025] sm:p-6">
+                <span><span className="block text-sm font-bold text-white">Hide my profile</span><span className="mt-1 block max-w-lg text-xs leading-5 text-[#aaa8d0]">Disappear from new discovery while keeping your existing matches and conversations.</span></span>
+                <span className="relative shrink-0"><input type="checkbox" checked={isHidden} onChange={(e) => handleToggleHidden(e.target.checked)} className="peer sr-only" /><span className="block h-7 w-12 rounded-full border border-white/15 bg-white/10 transition peer-checked:border-[#f35ca8]/50 peer-checked:bg-[#f35ca8]"><span className="block h-5 w-5 translate-x-1 translate-y-0.5 rounded-full bg-white shadow transition peer-checked:translate-x-6" /></span></span>
               </label>
-              <select
-                value={partnerPref}
-                onChange={(e) => handlePrefChange(e.target.value)}
-                className="mt-2 w-full rounded-xl bg-[#161a3d] p-3 text-sm text-white border border-white/10 outline-none"
-              >
-                <option value="Everyone" className="bg-[#161a3d] text-white">Everyone</option>
-                <option value="Women" className="bg-[#161a3d] text-white">Women</option>
-                <option value="Men" className="bg-[#161a3d] text-white">Men</option>
-                <option value="Non-binary" className="bg-[#161a3d] text-white">Non-binary</option>
-              </select>
+              <div className="p-5 sm:p-6"><label htmlFor="partner-preference" className="block text-sm font-bold text-white">Who should we show you?</label><p className="mt-1 text-xs leading-5 text-[#aaa8d0]">Use a preference to make your Discovery floor feel more relevant.</p><select id="partner-preference" value={partnerPref} onChange={(e) => handlePrefChange(e.target.value)} className="mt-3 w-full rounded-2xl border border-white/10 bg-[#191342] p-3.5 text-sm font-semibold text-white outline-none transition focus:border-[#ffd166]"><option value="Everyone">Everyone</option><option value="Women">Women</option><option value="Men">Men</option><option value="Non-binary">Non-binary</option></select></div>
             </div>
           </Card>
 
-          <Card className="p-6">
-            <h2 className="font-bold text-lg">Account</h2>
-            <div className="mt-4 space-y-3">
-              <Link href="/onboarding" className="block">
-                <Button variant="secondary" className="w-full text-xs">
-                  Edit Full Profile Details
-                </Button>
-              </Link>
-              <Button
-                variant="ghost"
-                onClick={() => signOut()}
-                className="w-full text-xs text-[#ffd166]"
-              >
-                Sign Out
-              </Button>
-              <button
-                onClick={handleDeleteAccount}
-                className="w-full text-xs text-red-400 hover:text-red-300 py-2 text-center"
-              >
-                Delete Account & Data
-              </button>
-            </div>
+          <Card className="p-0">
+            <div className="border-b border-white/10 p-5 sm:p-6"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">Profile & account</p><h2 className="display-font mt-1 text-xl font-bold text-white">Keep your details fresh</h2></div>
+            <div className="space-y-2 p-5 sm:p-6"><Link href="/onboarding" className="block"><Button variant="secondary" className="w-full justify-between px-4 text-xs">Edit full profile details <span aria-hidden="true">→</span></Button></Link><Button variant="ghost" onClick={() => signOut()} className="w-full text-xs text-[#ffd166]">Sign out</Button><button type="button" onClick={handleDeleteAccount} className="w-full rounded-full px-4 py-3 text-center text-xs font-semibold text-red-300 transition hover:bg-red-500/10 hover:text-red-200">Delete account & data</button></div>
           </Card>
 
-          <Card className="p-6 border-white/5">
-            <h2 className="font-bold text-sm text-[#aab0d0]">Campus Privacy & Security</h2>
-            <p className="mt-2 text-xs text-[#73789e] leading-5">
-              GarbaMate enforces strict campus safety and PostgreSQL Row Level Security (RLS). Your raw email address, password hashes, and personal contact details are never exposed to other students.
-            </p>
-          </Card>
+          <div className="flex items-start gap-3 rounded-[24px] border border-[#2dd4bf]/20 bg-[#123e4a]/25 p-4 sm:p-5"><span className="text-xl" aria-hidden="true">🛡️</span><div><p className="text-xs font-bold text-[#73f4df]">Campus privacy promise</p><p className="mt-1 text-[11px] leading-5 text-[#b4d9d7]">Your raw email, password hashes, and private contact details are never shown to other students. GarbaMate uses row-level access controls for profile data.</p><Link href="/privacy" className="mt-2 inline-block text-[11px] font-bold text-[#73f4df] underline decoration-[#73f4df]/30 underline-offset-2">Read privacy details</Link></div></div>
         </div>
       </div>
     </AppShell>

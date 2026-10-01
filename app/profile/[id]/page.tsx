@@ -4,16 +4,23 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
-import { Badge, Button, Card } from "@/components/ui";
+import { AvatarFallback, Badge, Button, Card, VerifiedBadge } from "@/components/ui";
+import { FESTIVAL_DAYS } from "@/config/festival";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
 import { uploadAvatar } from "@/lib/supabase/storage";
 import type { Profile, ReportReason } from "@/lib/supabase/types";
 
+function isImageSrc(src?: string | null): boolean {
+  if (!src) return false;
+  const value = src.trim();
+  return value.startsWith("http://") || value.startsWith("https://") || value.startsWith("data:") || value.startsWith("/") || value.startsWith("blob:");
+}
+
 export default function ProfilePage() {
   const params = useParams();
   const targetId = (params?.id as string) || "me";
-  const { user, profile: myProfile, demoLogin, refreshProfile } = useAuth();
+  const { user, profile: myProfile, refreshProfile } = useAuth();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -26,7 +33,7 @@ export default function ProfilePage() {
   const [uploading, setUploading] = useState(false);
   const [actionSuccess, setActionSuccess] = useState<string | null>(null);
 
-  const isOwnProfile = user && (targetId === "me" || targetId === user.id);
+  const isOwnProfile = Boolean(user && (targetId === "me" || targetId === user.id));
 
   useEffect(() => {
     async function load() {
@@ -43,7 +50,6 @@ export default function ProfilePage() {
     load();
   }, [targetId, isOwnProfile, myProfile]);
 
-  // Handle avatar upload for own profile
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file || !user) return;
@@ -82,12 +88,7 @@ export default function ProfilePage() {
   const handleReport = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !profile) return;
-    await db.createReport({
-      reporter_id: user.id,
-      reported_user_id: profile.id,
-      reason: reportReason,
-      description: reportDesc,
-    });
+    await db.createReport({ reporter_id: user.id, reported_user_id: profile.id, reason: reportReason, description: reportDesc });
     setReportSuccess(true);
     setTimeout(() => {
       setReportModal(false);
@@ -96,291 +97,77 @@ export default function ProfilePage() {
     }, 2000);
   };
 
-  // 1. UNLOGGED GATE: Strict student privacy barrier
   if (!user) {
     return (
-      <AppShell title="Profile Protected">
-        <div className="mx-auto max-w-lg pt-6">
-          <Card className="border-[#ffd166]/30 bg-gradient-to-b from-[#1b1f48] to-[#111432] p-8 text-center shadow-2xl">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-[#ffd166]/10 text-4xl border border-[#ffd166]/20">
-              🛡️
+      <AppShell title="Profile protected">
+        <div className="mx-auto max-w-lg pt-3 sm:pt-8">
+          <Card className="overflow-hidden border-[#ffd166]/25 p-0">
+            <div className="bg-gradient-to-br from-[#2b215b] to-[#171039] p-7 text-center sm:p-9">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-[#ffd166]/20 bg-[#ffd166]/10 text-3xl">🛡️</div>
+              <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#ffd166]">College verified access</p>
+              <h1 className="display-font mt-2 text-2xl font-bold text-white sm:text-3xl">Student profile protected</h1>
+              <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[#cbc9e8]">Sign in with your verified BMSCE account to view photos, bios, availability, and preferences.</p>
+              <Link href="/login" className="mt-7 inline-block w-full sm:w-auto"><Button className="w-full sm:w-auto">Sign in with BMSCE account <span aria-hidden="true">→</span></Button></Link>
             </div>
-            <h1 className="mt-5 text-3xl font-black">Student Profile Protected</h1>
-            <p className="mt-3 text-sm leading-6 text-[#c5c9e8]">
-              To protect student safety and prevent unauthorized browsing, you must log in with your verified BMSCE account to view student profiles, photos, and dance preferences.
-            </p>
-
-            <div className="mt-8 flex flex-col gap-3">
-              <Link href="/login" className="w-full">
-                <Button className="w-full">Sign in with BMSCE Account</Button>
-              </Link>
-            </div>
-
-            <div className="mt-6 border-t border-white/10 pt-4 text-xs text-[#aab0d0]">
-              <span>🔒 College-verified access only</span> • <span>BMSCE Navratri 2026</span>
-            </div>
+            <div className="border-t border-white/10 px-5 py-3 text-center text-[11px] text-[#aaa8d0]">Private by design · BMSCE Navratri 2026</div>
           </Card>
         </div>
       </AppShell>
     );
   }
 
-  // 2. Loading state
   if (loading) {
-    return (
-      <AppShell title="Loading Profile">
-        <div className="mx-auto max-w-lg py-16 text-center text-[#aab0d0]">
-          <div className="text-4xl animate-spin">🪩</div>
-          <p className="mt-3 text-sm">Loading student profile...</p>
-        </div>
-      </AppShell>
-    );
+    return <AppShell title="Loading profile"><div className="mx-auto max-w-lg py-20 text-center text-[#aaa8d0]"><div className="text-4xl animate-spin" aria-hidden="true">🪩</div><p className="mt-3 text-sm">Loading student profile…</p></div></AppShell>;
   }
 
-  // 3. Profile Not Found
   if (!profile && !isOwnProfile) {
     return (
-      <AppShell title="Profile Not Found">
-        <div className="mx-auto max-w-lg py-12 text-center">
-          <Card>
-            <div className="text-4xl">🔍</div>
-            <h2 className="mt-3 text-2xl font-bold">Profile not found</h2>
-            <p className="mt-2 text-sm text-[#aab0d0]">
-              This student profile may have been hidden, removed, or is awaiting onboarding.
-            </p>
-            <Link href="/discover" className="mt-6 inline-block">
-              <Button>Browse other dancers</Button>
-            </Link>
-          </Card>
-        </div>
+      <AppShell title="Profile not found">
+        <div className="mx-auto max-w-lg py-10 text-center"><Card className="py-12"><div className="text-4xl" aria-hidden="true">🔍</div><h2 className="mt-3 text-2xl font-bold text-white">Profile not found</h2><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-[#aaa8d0]">This student profile may be hidden, removed, or awaiting onboarding.</p><Link href="/discover" className="mt-6 inline-block"><Button>Browse other dancers</Button></Link></Card></div>
       </AppShell>
     );
   }
 
   const currentProfile = profile || myProfile;
+  const profileName = currentProfile?.first_name || "Student";
 
   return (
-    <AppShell title={isOwnProfile ? "My Profile" : `${currentProfile?.first_name}'s Profile`}>
-      <div className="mx-auto max-w-lg">
-        {actionSuccess && (
-          <div className="mb-4 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 p-4 text-sm text-emerald-200">
-            {actionSuccess}
-          </div>
-        )}
+    <AppShell title={isOwnProfile ? "My profile" : `${profileName}'s profile`}>
+      <div className="mx-auto max-w-2xl pb-6">
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <Link href="/discover" className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-bold text-[#cbc9e8] transition hover:bg-white/10"><span aria-hidden="true">←</span> Discover</Link>
+          {!isOwnProfile && <button type="button" onClick={() => setReportModal(true)} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 px-3.5 py-2 text-xs font-bold text-[#aaa8d0] transition hover:border-red-400/30 hover:bg-red-400/10 hover:text-red-200">⚑ Report</button>}
+        </div>
 
-        <Card className="overflow-hidden p-0 border-white/10 shadow-2xl">
-          {/* Header image / emoji display */}
-          <div className="relative flex h-72 items-center justify-center bg-gradient-to-br from-[#52255e] via-[#2a2861] to-[#121c4b] text-9xl">
-            {currentProfile?.photo_path?.startsWith("http") || currentProfile?.photo_path?.startsWith("data:") ? (
-              <img
-                src={currentProfile.photo_path}
-                alt={currentProfile.first_name}
-                className="h-full w-full object-cover"
-              />
-            ) : (
-              <span className="hover:scale-110 transition duration-300">
-                {currentProfile?.photo_path || "🌸"}
-              </span>
-            )}
+        {actionSuccess && <div role="status" className="mb-4 rounded-2xl border border-[#2dd4bf]/25 bg-[#2dd4bf]/10 px-4 py-3 text-xs font-semibold text-[#b7f3e9]">{actionSuccess}</div>}
 
-            {isOwnProfile && (
-              <label className="absolute bottom-4 right-4 cursor-pointer rounded-full bg-black/60 backdrop-blur-md px-3 py-1.5 text-xs font-semibold text-white border border-white/20 hover:bg-black/80 transition">
-                {uploading ? "Uploading..." : "📷 Change Photo"}
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={handlePhotoUpload}
-                  disabled={uploading}
-                  className="hidden"
-                />
-              </label>
-            )}
+        <Card className="overflow-hidden p-0">
+          <div className="relative h-[290px] overflow-hidden bg-gradient-to-br from-[#6c2c59] via-[#30235b] to-[#12143b] sm:h-[360px]">
+            {isImageSrc(currentProfile?.photo_path) ? <img src={currentProfile?.photo_path || ""} alt={profileName} className="h-full w-full object-cover" /> : <div className="flex h-full items-center justify-center text-9xl drop-shadow-[0_18px_30px_rgba(0,0,0,.35)]">{currentProfile?.photo_path || "🌸"}</div>}
+            <div className="absolute inset-0 bg-gradient-to-t from-[#100a2c] via-transparent to-black/10" aria-hidden="true" />
+            <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-5 sm:p-7">
+              <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="display-font text-3xl font-bold text-white drop-shadow-lg sm:text-4xl">{profileName}{currentProfile?.age ? `, ${currentProfile.age}` : ""}</h1><VerifiedBadge /></div><p className="mt-1 text-xs font-semibold text-[#ddd9f2]">{currentProfile?.branch || "BMSCE"} · Year {currentProfile?.year || 2} · {currentProfile?.experience || "Finding a vibe"}</p></div>
+              <span className="hidden rounded-full border border-[#2dd4bf]/30 bg-[#0b5d57]/70 px-3 py-1.5 text-[10px] font-bold text-[#9ef2e3] sm:inline-flex">● Active recently</span>
+            </div>
+            {isOwnProfile && <label className="absolute right-4 top-4 cursor-pointer rounded-full border border-white/15 bg-black/45 px-3.5 py-2 text-[11px] font-bold text-white backdrop-blur-md transition hover:bg-black/65">{uploading ? "Uploading…" : "📷 Change photo"}<input type="file" accept="image/*" onChange={handlePhotoUpload} disabled={uploading} className="hidden" /></label>}
           </div>
 
-          <div className="p-6">
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-3xl font-black flex items-center gap-2">
-                  {currentProfile?.first_name}, {currentProfile?.age}
-                </h1>
-                <p className="mt-1 text-sm text-[#c5c9e8]">
-                  {currentProfile?.branch} · Year {currentProfile?.year} ·{" "}
-                  <span className="text-[#ffd166]">{currentProfile?.experience}</span>
-                </p>
-              </div>
-              <span className="rounded-full bg-emerald-500/20 border border-emerald-500/40 px-3 py-1 text-xs font-bold text-emerald-300">
-                Verified
-              </span>
+          <div className="space-y-6 p-5 sm:p-7">
+            <div className="grid gap-4 sm:grid-cols-[1.25fr_.75fr]">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.035] p-4"><div className="flex items-center justify-between gap-3"><h2 className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">About {profileName}</h2>{isOwnProfile && !editMode && <button type="button" onClick={() => setEditMode(true)} className="text-[11px] font-bold text-[#ffd166] hover:underline">Edit</button>}</div>{editMode ? <div className="mt-3 space-y-2"><textarea value={editBio} onChange={(e) => setEditBio(e.target.value)} maxLength={200} rows={3} className="w-full rounded-xl border border-white/10 bg-[#100a2c] p-3 text-sm text-white outline-none focus:border-[#ffd166]" /><div className="flex gap-2"><Button onClick={handleSaveBio} className="min-h-10 px-4 text-xs">Save bio</Button><Button variant="ghost" onClick={() => setEditMode(false)} className="min-h-10 px-4 text-xs">Cancel</Button></div></div> : <p className="mt-2 text-sm leading-6 text-[#cbc9e8]">{currentProfile?.bio || "No bio added yet."}</p>}</div>
+              <div className="rounded-2xl border border-[#ffd166]/15 bg-[#ffd166]/[0.05] p-4"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">Looking for</p><p className="mt-2 text-sm font-semibold text-white">{currentProfile?.looking_for?.join(" · ") || "A good Garba vibe"}</p><p className="mt-2 text-[11px] leading-5 text-[#aaa8d0]">Shared nights and kind energy first.</p></div>
             </div>
 
-            {/* Bio Section */}
-            <div className="mt-5">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-[#aab0d0]">About</h3>
-              {editMode ? (
-                <div className="mt-2 space-y-2">
-                  <textarea
-                    value={editBio}
-                    onChange={(e) => setEditBio(e.target.value)}
-                    maxLength={200}
-                    className="w-full rounded-xl border border-white/20 bg-white/5 p-3 text-sm text-white outline-none focus:border-[#ffd166]"
-                    rows={3}
-                  />
-                  <div className="flex gap-2">
-                    <Button onClick={handleSaveBio} className="min-h-9 px-4 text-xs">
-                      Save
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      onClick={() => setEditMode(false)}
-                      className="min-h-9 px-4 text-xs"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              ) : (
-                <div className="mt-2 flex items-start justify-between">
-                  <p className="text-sm leading-6 text-[#c5c9e8]">
-                    {currentProfile?.bio || "No bio added yet."}
-                  </p>
-                  {isOwnProfile && (
-                    <button
-                      onClick={() => setEditMode(true)}
-                      className="ml-2 text-xs text-[#ffd166] hover:underline whitespace-nowrap"
-                    >
-                      Edit
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
+            <section aria-labelledby="availability-heading"><div className="flex items-end justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#f35ca8]">Find the overlap</p><h2 id="availability-heading" className="display-font mt-1 text-xl font-bold text-white">Available nights</h2></div><span className="text-[11px] text-[#aaa8d0]">{currentProfile?.available_nights?.length || 0} of {FESTIVAL_DAYS.length} selected</span></div><div className="mt-3 grid grid-cols-9 gap-1.5">{FESTIVAL_DAYS.map((day, index) => { const night = index + 1; const available = currentProfile?.available_nights?.includes(night); return <span key={day} title={`${day}${available ? ": available" : ": not selected"}`} className={`flex min-h-12 flex-col items-center justify-center rounded-xl border text-[9px] font-bold transition ${available ? "border-[#ff8b4d]/50 bg-[#ff8b4d]/15 text-[#ffdca0]" : "border-white/10 bg-white/[0.03] text-[#73789e]"}`}><span className={`mb-1 h-2 w-2 rounded-full ${available ? "bg-[#ffd166] shadow-[0_0_9px_rgba(255,209,102,.75)]" : "bg-white/15"}`} /><span>D{night}</span></span>; })}</div></section>
 
-            {/* Garba Preferences */}
-            <div className="mt-5 space-y-3">
-              <div>
-                <h4 className="text-xs font-semibold text-[#aab0d0] uppercase tracking-wider">Garba Styles</h4>
-                <div className="mt-1.5 flex flex-wrap gap-2">
-                  {currentProfile?.styles?.map((s) => (
-                    <Badge key={s}>{s}</Badge>
-                  ))}
-                </div>
-              </div>
+            <div className="grid gap-5 sm:grid-cols-2"><div><h2 className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Garba styles</h2><div className="mt-2 flex flex-wrap gap-1.5">{(currentProfile?.styles || []).map((style) => <Badge key={style} className="bg-[#f35ca8]/10 text-[#ffb5dc]">{style}</Badge>)}</div></div><div><h2 className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Interests</h2><div className="mt-2 flex flex-wrap gap-1.5">{(currentProfile?.interests || []).map((interest) => <Badge key={interest} className="bg-white/[0.04] text-[#aaa8d0]">#{interest}</Badge>)}</div></div></div>
 
-              <div>
-                <h4 className="text-xs font-semibold text-[#aab0d0] uppercase tracking-wider">Available Nights</h4>
-                <div className="mt-1.5 flex flex-wrap gap-2">
-                  {currentProfile?.available_nights?.map((night) => (
-                    <Badge key={night} className="bg-[#f35ca8]/20 text-[#ffb1d8] border border-[#f35ca8]/30">
-                      Day {night}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-
-              <div>
-                <h4 className="text-xs font-semibold text-[#aab0d0] uppercase tracking-wider">Interests</h4>
-                <div className="mt-1.5 flex flex-wrap gap-2">
-                  {currentProfile?.interests?.map((i) => (
-                    <Badge key={i} className="bg-white/5 text-[#aab0d0]">
-                      #{i}
-                    </Badge>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Actions */}
-            <div className="mt-8 flex flex-col gap-3">
-              {!isOwnProfile ? (
-                <>
-                  <Button onClick={handleSendLike} className="w-full">
-                    ♥ Send Garba Interest
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    onClick={() => setReportModal(true)}
-                    className="w-full text-xs text-red-300 hover:text-red-200"
-                  >
-                    🚩 Report or Block Student
-                  </Button>
-                </>
-              ) : (
-                <Link href="/settings">
-                  <Button variant="secondary" className="w-full">
-                    Account & Privacy Settings
-                  </Button>
-                </Link>
-              )}
-            </div>
+            <div className="flex flex-col gap-2 border-t border-white/10 pt-5 sm:flex-row">{!isOwnProfile ? <><Button onClick={handleSendLike} className="flex-1">♥ Send Garba interest</Button><Link href={`/chat/${currentProfile?.id}`} className="flex-1"><Button variant="secondary" className="w-full">💬 Open chat</Button></Link></> : <Link href="/settings" className="flex-1"><Button variant="secondary" className="w-full">Account & privacy settings</Button></Link>}</div>
+            {!isOwnProfile && <p className="text-center text-[10px] text-[#73789e]">Only send interest if you&apos;d be comfortable meeting in the public festival space.</p>}
           </div>
         </Card>
 
-        {/* Report / Block Modal */}
-        {reportModal && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm">
-            <Card className="max-w-md w-full border-red-500/30 p-6">
-              <h2 className="text-xl font-bold text-red-300 flex items-center gap-2">
-                🚩 Report / Block Profile
-              </h2>
-              <p className="mt-2 text-xs leading-5 text-[#aab0d0]">
-                We take safety very seriously. Submissions are reviewed confidentially by BMSCE administrators.
-              </p>
-
-              {reportSuccess ? (
-                <div className="my-6 rounded-xl bg-emerald-500/20 p-4 text-center text-sm text-emerald-300">
-                  ✓ Report filed successfully. Thank you for keeping our campus safe.
-                </div>
-              ) : (
-                <form onSubmit={handleReport} className="mt-4 space-y-4">
-                  <div>
-                    <label className="block text-xs font-semibold text-[#c5c9e8] mb-1">
-                      Reason
-                    </label>
-                    <select
-                      value={reportReason}
-                      onChange={(e) => setReportReason(e.target.value as ReportReason)}
-                      className="w-full rounded-xl bg-white/5 p-3 text-sm text-white border border-white/10 outline-none"
-                    >
-                      <option value="harassment">Harassment or rude behaviour</option>
-                      <option value="fake_profile">Fake profile or impersonation</option>
-                      <option value="inappropriate_content">Inappropriate photos or bio</option>
-                      <option value="spam">Commercial spam / tickets resale</option>
-                      <option value="other">Other reason</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xs font-semibold text-[#c5c9e8] mb-1">
-                      Details (optional)
-                    </label>
-                    <textarea
-                      value={reportDesc}
-                      onChange={(e) => setReportDesc(e.target.value)}
-                      maxLength={1000}
-                      rows={3}
-                      placeholder="Explain what happened..."
-                      className="w-full rounded-xl bg-white/5 p-3 text-sm text-white border border-white/10 outline-none"
-                    />
-                  </div>
-
-                  <div className="flex justify-end gap-2 pt-2">
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      onClick={() => setReportModal(false)}
-                      className="min-h-9 px-4 text-xs"
-                    >
-                      Cancel
-                    </Button>
-                    <Button type="submit" className="min-h-9 px-4 text-xs bg-red-600 hover:bg-red-500">
-                      Submit Report
-                    </Button>
-                  </div>
-                </form>
-              )}
-            </Card>
-          </div>
-        )}
+        {reportModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><Card className="w-full max-w-md border-red-500/30 p-6"><h2 className="text-xl font-bold text-red-200">⚑ Report profile</h2><p className="mt-2 text-xs leading-5 text-[#aaa8d0]">Reports are reviewed confidentially by BMSCE administrators. Thank you for keeping the campus safe.</p>{reportSuccess ? <div className="my-6 rounded-xl bg-[#2dd4bf]/10 p-4 text-center text-sm text-[#9ef2e3]">✓ Report filed successfully.</div> : <form onSubmit={handleReport} className="mt-5 space-y-4"><div><label className="mb-1 block text-xs font-semibold text-[#cbc9e8]">Reason</label><select value={reportReason} onChange={(e) => setReportReason(e.target.value as ReportReason)} className="w-full rounded-xl border border-white/10 bg-[#191342] p-3 text-sm text-white outline-none"><option value="harassment">Harassment or rude behaviour</option><option value="fake_profile">Fake profile or impersonation</option><option value="inappropriate_content">Inappropriate photos or bio</option><option value="spam">Commercial spam / ticket resale</option><option value="other">Other reason</option></select></div><div><label className="mb-1 block text-xs font-semibold text-[#cbc9e8]">Details (optional)</label><textarea value={reportDesc} onChange={(e) => setReportDesc(e.target.value)} maxLength={1000} rows={3} placeholder="Explain what happened…" className="w-full rounded-xl border border-white/10 bg-[#191342] p-3 text-sm text-white outline-none" /></div><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setReportModal(false)} className="min-h-10 px-4 text-xs">Cancel</Button><Button type="submit" className="min-h-10 bg-red-600 px-4 text-xs hover:bg-red-500">Submit report</Button></div></form>}</Card></div>}
       </div>
     </AppShell>
   );

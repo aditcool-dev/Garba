@@ -1,26 +1,213 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap");
 @import "tailwindcss";
 
-:root { --navy: #090b24; --panel: #131735; --panel-2: #1b2043; --pink: #f35ca8; --orange: #ff8b4d; --gold: #ffd166; --muted: #aab0d0; }
-* { box-sizing: border-box; }
-html { overflow-x: hidden; }
-body { margin: 0; min-width: 320px; overflow-x: hidden; background: radial-gradient(circle at 20% 0%, #30205c 0, transparent 36%), var(--navy); color: #f8f7ff; font-family: Arial, sans-serif; }
-button, input, select, textarea { font: inherit; }
-button { cursor: pointer; }
-.touch-target { min-height: 44px; min-width: 44px; }
-input, select, textarea { color-scheme: dark; }
+:root {
+  color-scheme: dark;
+  --midnight-950: #0a0820;
+  --midnight-900: #100a2c;
+  --midnight-800: #150f3a;
+  --panel: #191342;
+  --panel-strong: #211952;
+  --pink: #f35ca8;
+  --magenta: #e8459b;
+  --orange: #ff8b4d;
+  --gold: #ffd166;
+  --teal-verified: #2dd4bf;
+  --muted: #aaa8d0;
+  --muted-strong: #cbc9e8;
+  --font-body: "DM Sans", "Avenir Next", "Segoe UI", Arial, sans-serif;
+  --font-display: "Space Grotesk", "Avenir Next", "Segoe UI", Arial, sans-serif;
+  --signature-gradient: linear-gradient(115deg, #e8459b 0%, #ff7a45 53%, #ffd166 100%);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  overflow-x: hidden;
+  background: var(--midnight-950);
+  text-rendering: optimizeLegibility;
+}
+
+body {
+  position: relative;
+  min-width: 320px;
+  min-height: 100vh;
+  margin: 0;
+  overflow-x: hidden;
+  background:
+    radial-gradient(circle at 12% -8%, rgba(111, 50, 157, 0.34) 0, transparent 32rem),
+    radial-gradient(circle at 100% 24%, rgba(232, 69, 155, 0.09) 0, transparent 28rem),
+    linear-gradient(180deg, var(--midnight-950) 0%, #0d0929 48%, var(--midnight-950) 100%);
+  color: #f8f7ff;
+  font-family: var(--font-body);
+  font-synthesis: none;
+}
+
+body::before {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  content: "";
+  opacity: 0.16;
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.018) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.018) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(to bottom, black, transparent 76%);
+}
+
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
+  font-family: var(--font-display);
+  letter-spacing: -0.035em;
+}
+
+a {
+  color: inherit;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+:where(button, a, input, select, textarea):focus-visible {
+  outline: 2px solid var(--gold);
+  outline-offset: 3px;
+}
+
+.touch-target {
+  min-width: 48px;
+  min-height: 48px;
+}
+
+.display-font {
+  font-family: var(--font-display);
+  letter-spacing: -0.035em;
+}
+
+.signature-gradient {
+  background-image: var(--signature-gradient);
+}
+
+.signature-text {
+  background-image: var(--signature-gradient);
+  background-clip: text;
+  color: transparent;
+}
+
+.garba-app-shell {
+  background:
+    radial-gradient(circle at 80% 0%, rgba(255, 122, 69, 0.05), transparent 24rem),
+    linear-gradient(180deg, rgba(10, 8, 32, 0.2), rgba(10, 8, 32, 0.62));
+}
+
+.shell-notifications > div > button:first-child {
+  min-width: 48px;
+  min-height: 48px;
+}
+
+@layer components {
+  .garba-card {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 28px;
+    background: linear-gradient(145deg, rgba(31, 23, 72, 0.94), rgba(17, 12, 46, 0.94));
+    box-shadow: 0 22px 60px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(255, 255, 255, 0.015);
+    backdrop-filter: blur(18px);
+  }
+}
+
+.subtle-ring {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 0 5px rgba(255, 255, 255, 0.02);
+}
+
+.verified-mark {
+  display: inline-flex;
+  min-width: 1.1rem;
+  min-height: 1.1rem;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(45, 212, 191, 0.5);
+  border-radius: 999px;
+  background: rgba(45, 212, 191, 0.14);
+  color: var(--teal-verified);
+  font-size: 0.65rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+input,
+select,
+textarea {
+  color-scheme: dark;
+}
+
 select {
-  background-color: #161a3d;
+  background-color: var(--panel);
   color: #f8f7ff;
 }
+
 select option {
-  background-color: #161a3d !important;
+  background-color: var(--panel) !important;
   color: #f8f7ff !important;
   padding: 8px 12px;
 }
+
 select option:hover,
 select option:focus,
 select option:checked {
   background-color: #2e265c !important;
-  color: #ffd166 !important;
+  color: var(--gold) !important;
 }
-.mandala { background-image: radial-gradient(circle at center, transparent 0 38%, rgba(255, 209, 102, .08) 39% 40%, transparent 41% 58%, rgba(243, 92, 168, .08) 59% 60%, transparent 61%); }
+
+.custom-scrollbar {
+  scrollbar-color: rgba(255, 209, 102, 0.34) transparent;
+  scrollbar-width: thin;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 5px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 209, 102, 0.34);
+}
+
+.mandala {
+  background-image:
+    radial-gradient(circle at center, transparent 0 38%, rgba(255, 209, 102, 0.08) 39% 40%, transparent 41% 58%, rgba(243, 92, 168, 0.08) 59% 60%, transparent 61%),
+    radial-gradient(circle at 20% 0%, rgba(48, 32, 92, 0.68) 0, transparent 36%);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+  }
+}

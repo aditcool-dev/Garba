@@ -4,10 +4,17 @@ import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
-import { Button, Card } from "@/components/ui";
+import { AvatarFallback, Button, Card, VerifiedBadge } from "@/components/ui";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
 import type { Message, Profile } from "@/lib/supabase/types";
+
+const CONVERSATION_STARTERS = [
+  "Which Navratri nights are you going?",
+  "Garba or Dandiya first?",
+  "Traditional outfit or Bollywood beats?",
+  "Let's practice the 3-taali steps!",
+];
 
 export default function ChatPage() {
   const params = useParams();
@@ -34,7 +41,6 @@ export default function ChatPage() {
 
       setLoading(true);
 
-      // If user came to /chat/demo or empty matchId without a real match
       if (!matchId || matchId === "demo" || matchId === "demo-ananya-1") {
         const matches = await db.getMatches(user.id);
         if (matches.length > 0) {
@@ -46,17 +52,15 @@ export default function ChatPage() {
           setLoading(false);
           setupSubscription(first.id);
           return;
-        } else {
-          setNotFound(true);
-          setLoading(false);
-          return;
         }
+        setNotFound(true);
+        setLoading(false);
+        return;
       }
 
-      // Check matches for current user
       const userMatches = await db.getMatches(user.id);
       const matched = userMatches.find(
-        (m) => m.id === matchId || m.user_a === matchId || m.user_b === matchId || m.partner?.id === matchId
+        (match) => match.id === matchId || match.user_a === matchId || match.user_b === matchId || match.partner?.id === matchId,
       );
 
       if (matched && matched.partner && matched.partner.id !== user.id) {
@@ -69,7 +73,6 @@ export default function ChatPage() {
         return;
       }
 
-      // Lookup target profile directly
       const directProfile = await db.getProfileById(matchId);
       if (directProfile && directProfile.id !== user.id) {
         setPartner(directProfile);
@@ -87,12 +90,9 @@ export default function ChatPage() {
 
     function setupSubscription(idToListen: string) {
       if (!idToListen || idToListen === "demo") return;
-      
+
       const onMsg = (newMsg: Message) => {
-        setMessages((prev) => {
-          if (prev.some((m) => m.id === newMsg.id)) return prev;
-          return [...prev, newMsg];
-        });
+        setMessages((prev) => (prev.some((message) => message.id === newMsg.id) ? prev : [...prev, newMsg]));
       };
 
       const unsub1 = db.subscribeToMessages(idToListen, onMsg);
@@ -105,9 +105,8 @@ export default function ChatPage() {
     }
 
     loadData();
-
     return () => {
-      unsubs.forEach((fn) => fn());
+      unsubs.forEach((unsubscribe) => unsubscribe());
     };
   }, [matchId, user]);
 
@@ -129,32 +128,23 @@ export default function ChatPage() {
       await db.sendMessage(matchId, user.id, content);
     }
 
-    setMessages((prev) => {
-      if (prev.some((m) => m.id === newMsg.id)) return prev;
-      return [...prev, newMsg];
-    });
-
+    setMessages((prev) => (prev.some((message) => message.id === newMsg.id) ? prev : [...prev, newMsg]));
     setSending(false);
   };
 
-  // Login Gate
   if (!user) {
     return (
-      <AppShell title="Chat Protected">
-        <div className="mx-auto max-w-lg pt-6">
-          <Card className="border-[#ffd166]/30 bg-gradient-to-b from-[#1b1f48] to-[#111432] p-8 text-center shadow-2xl">
-            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-[#ffd166]/10 text-4xl border border-[#ffd166]/20">
-              💬
+      <AppShell title="Chat protected">
+        <div className="mx-auto max-w-lg pt-3 sm:pt-8">
+          <Card className="overflow-hidden border-[#ffd166]/25 p-0">
+            <div className="bg-gradient-to-br from-[#2b215b] to-[#171039] p-7 text-center sm:p-9">
+              <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl border border-[#ffd166]/20 bg-[#ffd166]/10 text-3xl">💬</div>
+              <p className="mt-5 text-[10px] font-bold uppercase tracking-[0.18em] text-[#ffd166]">Verified match only</p>
+              <h1 className="display-font mt-2 text-2xl font-bold text-white sm:text-3xl">Login to open chat</h1>
+              <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[#cbc9e8]">Conversations are private and only unlock for verified match participants.</p>
+              <Link href="/login" className="mt-7 inline-block w-full sm:w-auto"><Button className="w-full sm:w-auto">Sign in to start chatting <span aria-hidden="true">→</span></Button></Link>
             </div>
-            <h1 className="mt-5 text-3xl font-black">Login to Open Chat</h1>
-            <p className="mt-3 text-sm leading-6 text-[#c5c9e8]">
-              All conversations are end-to-end protected and only accessible to verified match participants.
-            </p>
-            <div className="mt-8 flex flex-col gap-3">
-              <Link href="/login" className="w-full">
-                <Button className="w-full">Sign in to Start Chatting</Button>
-              </Link>
-            </div>
+            <div className="border-t border-white/10 px-5 py-3 text-center text-[11px] text-[#aaa8d0]">Your contact details stay yours.</div>
           </Card>
         </div>
       </AppShell>
@@ -162,161 +152,75 @@ export default function ChatPage() {
   }
 
   if (loading) {
-    return (
-      <AppShell title="Chat">
-        <div className="py-20 text-center text-[#aab0d0]">
-          <div className="text-4xl animate-spin mb-3">🪩</div>
-          <p className="text-sm">Connecting to secure chat room...</p>
-        </div>
-      </AppShell>
-    );
+    return <AppShell title="Chat"><div className="py-20 text-center text-[#aaa8d0]"><div className="mb-3 text-4xl animate-spin" aria-hidden="true">🪩</div><p className="text-sm">Connecting to your secure room…</p></div></AppShell>;
   }
 
-  // Prevent chatting with oneself or non-existent match
   if (notFound || !partner || partner.id === user.id) {
     return (
       <AppShell title="Chat">
-        <div className="mx-auto max-w-lg pt-12 text-center">
-          <Card className="border-white/10 p-8 shadow-2xl">
-            <div className="text-5xl mb-3">🤝</div>
-            <h1 className="text-2xl font-black text-white">No active match found</h1>
-            <p className="mt-3 text-sm text-[#aab0d0] leading-6">
-              You haven&apos;t matched with this student yet. To protect campus safety, chat unlocks only after both dancers swipe interested on each other!
-            </p>
-            <div className="mt-6 flex justify-center gap-3">
-              <Link href="/matches">
-                <Button>View Matches</Button>
-              </Link>
-              <Link href="/discover">
-                <Button variant="secondary">Find Partners</Button>
-              </Link>
-            </div>
+        <div className="mx-auto max-w-lg pt-8 text-center sm:pt-12">
+          <Card className="border-white/10 py-9">
+            <div className="text-5xl" aria-hidden="true">🤝</div>
+            <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.18em] text-[#ffd166]">Chat locked</p>
+            <h1 className="display-font mt-2 text-2xl font-bold text-white">No active match found</h1>
+            <p className="mx-auto mt-3 max-w-sm text-sm leading-6 text-[#aaa8d0]">Chat unlocks only after both dancers choose interested. Find your next connection on Discover.</p>
+            <div className="mt-6 flex flex-wrap justify-center gap-2"><Link href="/matches"><Button>View matches</Button></Link><Link href="/discover"><Button variant="secondary">Find partners</Button></Link></div>
           </Card>
         </div>
       </AppShell>
     );
   }
 
-  const partnerName = partner.first_name || "Match Partner";
-  const partnerPhoto = partner.photo_path || "🌸";
+  const partnerName = partner.first_name || "Match partner";
 
   return (
     <AppShell title={`Chat · ${partnerName}`}>
-      <div className="mx-auto flex max-w-2xl flex-col">
-        {/* Chat Header */}
-        <div className="mb-4 flex items-center justify-between border-b border-white/10 pb-4">
-          <div className="flex items-center gap-3">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#33234c] text-2xl border border-white/10 overflow-hidden">
-              {partnerPhoto.startsWith("http") || partnerPhoto.startsWith("data:") ? (
-                <img src={partnerPhoto} alt={partnerName} className="h-full w-full object-cover" />
-              ) : (
-                partnerPhoto
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="font-black text-lg text-white">{partnerName}</h1>
-                <span className="flex items-center gap-1 text-[11px] font-semibold text-emerald-400 bg-emerald-950/50 px-2 py-0.5 rounded-full border border-emerald-500/20">
-                  <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                  Matched
-                </span>
-              </div>
-              <p className="text-xs text-[#aab0d0]">
-                {partner.branch || "BMSCE"} · Matched for Navratri
-              </p>
-            </div>
+      <div className="mx-auto flex max-w-2xl flex-col pb-6">
+        <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/10 pb-4">
+          <div className="flex min-w-0 items-center gap-3">
+            <Link href="/chat" aria-label="Back to chats" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-lg text-[#cbc9e8] transition hover:bg-white/10">←</Link>
+            <div className="relative"><AvatarFallback src={partner.photo_path} name={partnerName} fallback={partner.photo_path || "🌸"} size="md" /><span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#18113f] bg-[#2dd4bf]" title="Available" /></div>
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-base font-bold text-white sm:text-lg">{partnerName}</h1><VerifiedBadge className="text-[10px]" /></div><p className="mt-0.5 truncate text-[11px] text-[#aaa8d0]">{partner.branch || "BMSCE"} · matched for Navratri</p></div>
           </div>
-
-          <div className="flex items-center gap-2">
-            <Link
-              href={`/profile/${partner.id}`}
-              className="rounded-full bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-semibold text-[#ffd166] border border-white/10"
-            >
-              View Profile
-            </Link>
-          </div>
+          <Link href={`/profile/${partner.id}`} className="hidden min-h-10 shrink-0 items-center rounded-full border border-white/10 px-3 py-2 text-[11px] font-bold text-[#ffd166] transition hover:bg-white/5 sm:inline-flex">View profile</Link>
         </div>
 
-        {/* Safety banner */}
-        <div className="mb-4 rounded-2xl border border-[#ffd166]/20 bg-[#ffd166]/10 p-3.5 text-xs leading-5 text-[#ffe9a3] flex items-center gap-2.5">
-          <span className="text-lg">🛡️</span>
-          <span>
-            <b>Campus Safety First:</b> Meet at official BMSCE festival venues, in public, with friends. Never share passwords, bank OTPs, or private contact details.
-          </span>
+        <div className="mb-4 flex items-start gap-3 rounded-2xl border border-[#ffd166]/20 bg-[#ffd166]/10 px-4 py-3.5">
+          <span className="text-lg" aria-hidden="true">🛡️</span>
+          <div className="text-[11px] leading-5 text-[#ffe9a3]"><p className="font-bold text-[#ffd166]">Campus safety first</p><p>Meet at official BMSCE festival venues, in public, with friends. Never share passwords, bank OTPs, or money.</p></div>
         </div>
 
-        {/* Messages container */}
-        <div className="min-h-[48vh] max-h-[55vh] overflow-y-auto space-y-3 rounded-2xl bg-black/20 p-4 border border-white/5">
+        <div className="min-h-[45vh] max-h-[58vh] overflow-y-auto rounded-[26px] border border-white/10 bg-[#0d0929]/60 p-4 shadow-inner sm:p-5" aria-live="polite">
           {messages.length === 0 ? (
-            <div className="py-12 text-center text-[#aab0d0] text-sm">
-              <p className="text-2xl mb-2">👋</p>
-              <p>Say hello to {partnerName} to coordinate your Navratri outfit and dance steps!</p>
-            </div>
+            <div className="flex min-h-[34vh] flex-col items-center justify-center px-4 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-[#f35ca8]/10 text-2xl" aria-hidden="true">👋</div><p className="mt-4 max-w-xs text-sm leading-6 text-[#cbc9e8]">Say hello to {partnerName} and make a plan for the floor.</p><p className="mt-1 text-[11px] text-[#aaa8d0]">Start with a chip below or write your own.</p></div>
           ) : (
-            messages.map((message) => {
-              const isMe = message.sender_id === user.id || message.sender_id === "current-user";
-              const time = new Date(message.created_at).toLocaleTimeString([], {
-                hour: "2-digit",
-                minute: "2-digit",
-              });
-
-              return (
-                <div
-                  key={message.id}
-                  className={`max-w-[78%] rounded-2xl px-4 py-2.5 shadow-md ${
-                    isMe
-                      ? "ml-auto bg-gradient-to-r from-[#f35ca8] to-[#ff8b4d] text-white rounded-br-sm"
-                      : "bg-[#292d58] text-[#f8f7ff] rounded-bl-sm border border-white/5"
-                  }`}
-                >
-                  <p className="text-sm leading-relaxed">{message.body}</p>
-                  <div
-                    className={`mt-1 text-[10px] flex items-center justify-end gap-1 ${
-                      isMe ? "text-white/80" : "text-[#aab0d0]"
-                    }`}
-                  >
-                    <span>{time}</span>
-                    {isMe && <span>✓✓</span>}
+            <div className="space-y-3">
+              {messages.map((message) => {
+                const isMe = message.sender_id === user.id || message.sender_id === "current-user";
+                const time = new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+                return (
+                  <div key={message.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
+                    <div className={`max-w-[84%] rounded-[22px] px-4 py-3 shadow-lg sm:max-w-[72%] ${isMe ? "rounded-br-md bg-gradient-to-br from-[#e8459b] to-[#ff7a45] text-white" : "rounded-bl-md border border-white/10 bg-[#211952] text-[#f8f7ff]"}`}>
+                      <p className="text-sm leading-6">{message.body}</p>
+                      <div className={`mt-1.5 flex items-center justify-end gap-1.5 text-[10px] ${isMe ? "text-white/75" : "text-[#aaa8d0]"}`}><span>{time}</span>{isMe && <span aria-label="Sent">✓✓</span>}</div>
+                    </div>
                   </div>
-                </div>
-              );
-            })
+                );
+              })}
+            </div>
           )}
           <div ref={messagesEndRef} />
         </div>
 
-        {/* Conversation Starters */}
-        <div className="my-3 flex flex-wrap gap-2">
-          {[
-            "Which Navratri nights are you going?",
-            "Garba or Dandiya first?",
-            "Traditional outfit or Bollywood beats?",
-            "Let's practice the 3-taali steps!",
-          ].map((starter) => (
-            <button
-              key={starter}
-              onClick={() => setText(starter)}
-              className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-[#c5c9e8] hover:border-[#ffd166] hover:text-white transition"
-            >
-              {starter}
-            </button>
-          ))}
+        <div className="custom-scrollbar my-3 flex gap-2 overflow-x-auto pb-1" aria-label="Conversation starters">
+          {CONVERSATION_STARTERS.map((starter) => <button key={starter} type="button" onClick={() => setText(starter)} className="min-h-10 shrink-0 rounded-full border border-white/10 bg-white/[0.045] px-3.5 py-2 text-xs font-semibold text-[#cbc9e8] transition hover:border-[#ffd166]/50 hover:bg-[#ffd166]/10 hover:text-[#ffdca0]">{starter}</button>)}
         </div>
 
-        {/* Input */}
-        <form onSubmit={handleSend} className="flex gap-2">
-          <input
-            aria-label="Message"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            maxLength={1000}
-            className="min-h-11 flex-1 rounded-full border border-white/10 bg-white/5 px-5 text-sm text-white outline-none focus:border-[#ffd166] placeholder:text-[#73789e]"
-            placeholder={`Message ${partnerName}...`}
-          />
-          <Button type="submit" disabled={!text.trim() || sending} className="px-6">
-            {sending ? "..." : "Send"}
-          </Button>
+        <form onSubmit={handleSend} className="flex items-end gap-2 rounded-[24px] border border-white/10 bg-white/[0.045] p-2 pl-4 shadow-xl">
+          <input aria-label="Message" value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} className="min-h-11 min-w-0 flex-1 bg-transparent py-2 text-sm text-white outline-none placeholder:text-[#73789e]" placeholder={`Message ${partnerName}…`} />
+          <Button type="submit" disabled={!text.trim() || sending} className="min-h-11 min-w-11 px-4" aria-label="Send message">{sending ? "…" : <><span className="hidden sm:inline">Send</span><span className="sm:hidden" aria-hidden="true">↑</span></>}</Button>
         </form>
+        <p className="mt-2 text-center text-[10px] text-[#73789e]">Keep it kind and keep meetup plans public. <Link href={`/profile/${partner.id}`} className="text-[#aaa8d0] underline decoration-white/20 underline-offset-2">Report a concern</Link></p>
       </div>
     </AppShell>
   );
