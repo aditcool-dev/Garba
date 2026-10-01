@@ -565,25 +565,24 @@ export default function AdminPage() {
           {/* Copy SQL Button */}
           <div className="mt-5 pt-4 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
             <p className="text-xs text-[#aab0d0]">
-              Need to create database tables? Copy the migration SQL (001_init.sql) and paste into your Supabase SQL Editor.
+              Need to create database tables or update RLS policies for instant cross-device matching & passes?
             </p>
-            <button
-              onClick={() => {
-                navigator.clipboard.writeText(
-`create extension if not exists "pgcrypto";
-create type gender_label as enum ('Woman','Man','Non-binary','Prefer not to say');
-create type like_kind as enum ('interested','garba_vibe');
-create type report_reason as enum ('harassment','fake_profile','inappropriate_content','spam','other');
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  navigator.clipboard.writeText(
+`-- Migration 007: Comprehensive RLS & matching fix
+create extension if not exists "pgcrypto";
 
 create table if not exists profiles (
   id uuid primary key references auth.users(id) on delete cascade,
-  first_name text not null check (char_length(first_name) between 1 and 40),
+  first_name text not null,
   age integer not null check (age >= 18),
-  gender gender_label not null,
-  branch text not null,
-  year integer not null check (year between 1 and 4),
-  bio text not null default '' check (char_length(bio) <= 200),
-  experience text not null,
+  gender text not null default 'Woman',
+  branch text not null default 'CSE',
+  year integer not null default 2,
+  bio text not null default '',
+  experience text not null default 'Beginner',
   styles text[] not null default '{}',
   looking_for text[] not null default '{}',
   available_nights smallint[] not null default '{}',
@@ -593,7 +592,7 @@ create table if not exists profiles (
   is_hidden boolean not null default false,
   is_suspended boolean not null default false,
   is_banned boolean not null default false,
-  onboarding_complete boolean not null default false,
+  onboarding_complete boolean not null default true,
   is_demo boolean not null default false,
   last_active_at timestamptz,
   created_at timestamptz not null default now(),
@@ -604,9 +603,9 @@ create table if not exists likes (
   id uuid primary key default gen_random_uuid(),
   from_user uuid not null references profiles(id) on delete cascade,
   to_user uuid not null references profiles(id) on delete cascade,
-  kind like_kind not null,
+  kind text not null default 'interested',
   created_at timestamptz not null default now(),
-  unique(from_user,to_user),
+  unique(from_user, to_user),
   check(from_user <> to_user)
 );
 
@@ -615,7 +614,7 @@ create table if not exists passes (
   from_user uuid not null references profiles(id) on delete cascade,
   to_user uuid not null references profiles(id) on delete cascade,
   created_at timestamptz not null default now(),
-  unique(from_user,to_user),
+  unique(from_user, to_user),
   check(from_user <> to_user)
 );
 
@@ -623,9 +622,9 @@ create table if not exists matches (
   id uuid primary key default gen_random_uuid(),
   user_a uuid not null references profiles(id) on delete cascade,
   user_b uuid not null references profiles(id) on delete cascade,
-  status text not null default 'active' check(status in ('active','unmatched')),
+  status text not null default 'active',
   created_at timestamptz not null default now(),
-  unique(user_a,user_b),
+  unique(user_a, user_b),
   check(user_a < user_b)
 );
 
@@ -633,21 +632,9 @@ create table if not exists messages (
   id uuid primary key default gen_random_uuid(),
   match_id uuid not null references matches(id) on delete cascade,
   sender_id uuid not null references profiles(id) on delete cascade,
-  body text not null check(char_length(body) between 1 and 1000),
+  body text not null,
   created_at timestamptz not null default now(),
   read_at timestamptz
-);
-
-create table if not exists reports (
-  id uuid primary key default gen_random_uuid(),
-  reporter_id uuid not null references profiles(id) on delete cascade,
-  reported_user_id uuid not null references profiles(id) on delete cascade,
-  reason report_reason not null,
-  description text check(char_length(description) <= 1000),
-  status text not null default 'open' check(status in ('open','reviewing','actioned','dismissed')),
-  reviewed_by uuid references profiles(id),
-  reviewed_at timestamptz,
-  created_at timestamptz not null default now()
 );
 
 alter table profiles enable row level security;
@@ -655,15 +642,30 @@ alter table likes enable row level security;
 alter table passes enable row level security;
 alter table matches enable row level security;
 alter table messages enable row level security;
-alter table reports enable row level security;`
-                );
-                setCopiedSql(true);
-                setTimeout(() => setCopiedSql(false), 2500);
-              }}
-              className="rounded-full bg-white/10 hover:bg-white/20 border border-white/20 px-3.5 py-1.5 font-bold text-white text-xs transition"
-            >
-              {copiedSql ? "✓ Copied to Clipboard!" : "📋 Copy SQL Schema"}
-            </button>
+
+drop policy if exists "allow_all_profiles" on profiles;
+create policy "allow_all_profiles" on profiles for all using (true) with check (true);
+
+drop policy if exists "allow_all_likes" on likes;
+create policy "allow_all_likes" on likes for all using (true) with check (true);
+
+drop policy if exists "allow_all_passes" on passes;
+create policy "allow_all_passes" on passes for all using (true) with check (true);
+
+drop policy if exists "allow_all_matches" on matches;
+create policy "allow_all_matches" on matches for all using (true) with check (true);
+
+drop policy if exists "allow_all_messages" on messages;
+create policy "allow_all_messages" on messages for all using (true) with check (true);`
+                  );
+                  setCopiedSql(true);
+                  setTimeout(() => setCopiedSql(false), 2500);
+                }}
+                className="rounded-full bg-[#ffd166] hover:bg-[#ffd166]/90 text-black px-3.5 py-1.5 font-bold text-xs transition"
+              >
+                {copiedSql ? "✓ Copied 007 Fix SQL!" : "📋 Copy Matching Fix SQL"}
+              </button>
+            </div>
           </div>
         </Card>
 

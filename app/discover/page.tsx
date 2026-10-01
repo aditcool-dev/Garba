@@ -7,7 +7,7 @@ import { Badge, Button, Card } from "@/components/ui";
 import { BRANCHES } from "@/config/branches";
 import { compatibilityScore } from "@/lib/scoring";
 import { useAuth } from "@/lib/supabase/auth-context";
-import { db } from "@/lib/supabase/client";
+import { db, INITIAL_DEMO_PROFILES } from "@/lib/supabase/client";
 import type { Profile } from "@/lib/supabase/types";
 
 function isImageSrc(src?: string | null): boolean {
@@ -33,8 +33,7 @@ function shuffleArray<T>(arr: T[]): T[] {
 
 export default function Discover() {
   const { user, profile: myProfile } = useAuth();
-  const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [publicNames, setPublicNames] = useState<Pick<Profile, "id" | "first_name">[]>([]);
+  const [profiles, setProfiles] = useState<Profile[]>(INITIAL_DEMO_PROFILES);
   const [index, setIndex] = useState(0);
   const [matchPopup, setMatchPopup] = useState<{ person: Profile; matchId: string } | null>(null);
   
@@ -45,45 +44,63 @@ export default function Discover() {
   const [filterBranch, setFilterBranch] = useState<string>("All");
   const [filterNight, setFilterNight] = useState<number | "All">("All");
   const [filterStyle, setFilterStyle] = useState<string>("All");
+  const [filterStatus, setFilterStatus] = useState<"All" | "matches" | "incoming" | "sent" | "passed">("All");
 
   const [loginPrompt, setLoginPrompt] = useState(false);
   const [incomingCount, setIncomingCount] = useState(0);
   const [incomingSenderIds, setIncomingSenderIds] = useState<Set<string>>(new Set());
+  const [userMatches, setUserMatches] = useState<any[]>([]);
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
   const [likedUserIds, setLikedUserIds] = useState<Set<string>>(new Set());
   const [passedUserIds, setPassedUserIds] = useState<Set<string>>(new Set());
 
+  const matchByPartnerId = useMemo(() => {
+    const map = new Map<string, string>();
+    userMatches.forEach((m) => {
+      const partnerId = m.user_a === user?.id ? m.user_b : m.user_a;
+      if (partnerId) map.set(partnerId, m.id);
+    });
+    return map;
+  }, [userMatches, user?.id]);
+
   const loadData = async () => {
-    if (!user) {
-      const names = await db.getPublicProfileNames();
-      setPublicNames(names);
-      setProfiles([]);
-      return;
+    try {
+      let allProfiles = await db.getProfiles();
+      if (!allProfiles || allProfiles.length === 0) {
+        allProfiles = INITIAL_DEMO_PROFILES;
+      }
+
+      if (!user) {
+        // Guest mode: still show all IDs and dancers so guest can explore, search, and shuffle!
+        setProfiles(allProfiles);
+        return;
+      }
+
+      const [incoming, matches, outgoingLikes, outgoingPasses] = await Promise.all([
+        db.getIncomingInterests(user.id),
+        db.getMatches(user.id),
+        db.getOutgoingLikedUserIds(user.id),
+        db.getOutgoingPassedUserIds(user.id),
+      ]);
+
+      setUserMatches(matches);
+
+      // Keep ALL student IDs visible on Discover (only exclude current user's own profile)
+      let available = allProfiles.filter((p) => p.id !== user.id);
+      if (available.length === 0) {
+        available = INITIAL_DEMO_PROFILES.filter((p) => p.id !== user.id);
+        if (available.length === 0) available = INITIAL_DEMO_PROFILES;
+      }
+
+      setProfiles(available);
+      setIncomingCount(incoming.length);
+      setIncomingSenderIds(new Set(incoming.map((i) => i.from_user)));
+      setLikedUserIds(outgoingLikes);
+      setPassedUserIds(outgoingPasses);
+    } catch (err) {
+      console.error("Error loading Discover data:", err);
+      setProfiles(INITIAL_DEMO_PROFILES);
     }
-
-    const [allProfiles, incoming, userMatches, outgoingLikes, outgoingPasses] = await Promise.all([
-      db.getProfiles(),
-      db.getIncomingInterests(user.id),
-      db.getMatches(user.id),
-      db.getOutgoingLikedUserIds(user.id),
-      db.getOutgoingPassedUserIds(user.id),
-    ]);
-
-    // Exclude current user, all already-matched partners, and all passed users
-    const matchedPartnerIds = new Set(
-      userMatches.map((m) => (m.user_a === user.id ? m.user_b : m.user_a))
-    );
-
-    const available = allProfiles.filter(
-      (p) => p.id !== user.id && !matchedPartnerIds.has(p.id) && !outgoingPasses.has(p.id)
-    );
-
-    // Randomize initial order for fresh discovery on every visit
-    setProfiles(shuffleArray(available));
-    setIncomingCount(incoming.length);
-    setIncomingSenderIds(new Set(incoming.map((i) => i.from_user)));
-    setLikedUserIds(outgoingLikes);
-    setPassedUserIds(outgoingPasses);
   };
 
   useEffect(() => {
@@ -91,12 +108,18 @@ export default function Discover() {
 
     if (user) {
       const unsub = db.subscribeToInterests(user.id, async (data) => {
-        const freshIncoming = await db.getIncomingInterests(user.id);
-        setIncomingCount(freshIncoming.length);
-        setIncomingSenderIds(new Set(freshIncoming.map((i) => i.from_user)));
-        if (data?.type === "dismissed") {
-          const freshPasses = await db.getOutgoingPassedUserIds(user.id);
-          setPassedUserIds(freshPasses);
+        try {
+          const freshIncoming = await db.getIncomingInterests(user.id);
+          const freshMatches = await db.getMatches(user.id);
+          setIncomingCount(freshIncoming.length);
+          setIncomingSenderIds(new Set(freshIncoming.map((i) => i.from_user)));
+          setUserMatches(freshMatches);
+          if (data?.type === "dismissed") {
+            const freshPasses = await db.getOutgoingPassedUserIds(user.id);
+            setPassedUserIds(freshPasses);
+          }
+        } catch (e) {
+          console.warn("Realtime interest update warning:", e);
         }
       });
       return () => {
@@ -105,20 +128,75 @@ export default function Discover() {
     }
   }, [user]);
 
-  // Dynamic filter & search logic
+  // Compute status counts for the filter pills
+  const statusCounts = useMemo(() => {
+    let matchesCount = 0;
+    let incomingTotal = 0;
+    let sentCount = 0;
+    let passedCount = 0;
+
+    profiles.forEach((p) => {
+      const isMatched = matchByPartnerId.has(p.id);
+      const isIncoming = incomingSenderIds.has(p.id) && !isMatched;
+      const isSent = likedUserIds.has(p.id) && !isMatched && !isIncoming;
+      const isPassed = passedUserIds.has(p.id) && !isMatched && !isIncoming;
+
+      if (isMatched) matchesCount++;
+      else if (isIncoming) incomingTotal++;
+      else if (isSent) sentCount++;
+      else if (isPassed) passedCount++;
+    });
+
+    return {
+      total: profiles.length,
+      matches: matchesCount,
+      incoming: incomingTotal,
+      sent: sentCount,
+      passed: passedCount,
+    };
+  }, [profiles, matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds]);
+
+  // Dynamic filter & search logic - ALWAYS shows all IDs unless filtered by user criteria
   const filteredProfiles = useMemo(() => {
     return profiles.filter((p) => {
-      // Exclude passed students in current fast session
-      if (passedUserIds.has(p.id)) return false;
+      const isMatched = matchByPartnerId.has(p.id);
+      const isIncoming = incomingSenderIds.has(p.id) && !isMatched;
+      const isSent = likedUserIds.has(p.id) && !isMatched && !isIncoming;
+      const isPassed = passedUserIds.has(p.id) && !isMatched && !isIncoming;
 
-      // Search term
+      // Status Pill Filter
+      if (filterStatus === "matches" && !isMatched) return false;
+      if (filterStatus === "incoming" && !isIncoming) return false;
+      if (filterStatus === "sent" && !isSent) return false;
+      if (filterStatus === "passed" && !isPassed) return false;
+
+      // Real-time Search term: matches name, ID, branch, bio, styles, experience, or status keyword
       if (searchTerm.trim()) {
-        const term = searchTerm.toLowerCase();
-        const matchesName = p.first_name.toLowerCase().includes(term);
-        const matchesBranch = p.branch.toLowerCase().includes(term);
+        const term = searchTerm.toLowerCase().trim();
+        const matchesName = (p.first_name || "").toLowerCase().includes(term);
+        const matchesId = (p.id || "").toLowerCase().includes(term);
+        const matchesBranch = (p.branch || "").toLowerCase().includes(term);
         const matchesBio = (p.bio || "").toLowerCase().includes(term);
-        const matchesStyle = p.styles.some((s) => s.toLowerCase().includes(term));
-        if (!matchesName && !matchesBranch && !matchesBio && !matchesStyle) {
+        const matchesExp = (p.experience || "").toLowerCase().includes(term);
+        const matchesStyle = (p.styles || []).some((s) => s.toLowerCase().includes(term));
+        const matchesInterest = (p.interests || []).some((i) => i.toLowerCase().includes(term));
+
+        const matchesStatusKeyword =
+          (term.includes("match") && isMatched) ||
+          ((term.includes("interest") || term.includes("incoming")) && isIncoming) ||
+          (term.includes("sent") && isSent) ||
+          (term.includes("pass") && isPassed);
+
+        if (
+          !matchesName &&
+          !matchesId &&
+          !matchesBranch &&
+          !matchesBio &&
+          !matchesExp &&
+          !matchesStyle &&
+          !matchesInterest &&
+          !matchesStatusKeyword
+        ) {
           return false;
         }
       }
@@ -140,7 +218,18 @@ export default function Discover() {
 
       return true;
     });
-  }, [profiles, passedUserIds, searchTerm, filterBranch, filterNight, filterStyle]);
+  }, [
+    profiles,
+    filterStatus,
+    matchByPartnerId,
+    incomingSenderIds,
+    likedUserIds,
+    passedUserIds,
+    searchTerm,
+    filterBranch,
+    filterNight,
+    filterStyle,
+  ]);
 
   const person = filteredProfiles[index % (filteredProfiles.length || 1)];
 
@@ -151,22 +240,52 @@ export default function Discover() {
       return;
     }
 
+    // If already matched, navigate to chat
+    const existingMatchId = matchByPartnerId.get(target.id);
+    if (existingMatchId) {
+      window.location.href = `/chat/${existingMatchId}`;
+      return;
+    }
+
     const isMatchBack = incomingSenderIds.has(target.id);
 
     setLikedUserIds((prev) => new Set(prev).add(target.id));
+    setPassedUserIds((prev) => {
+      const next = new Set(prev);
+      next.delete(target.id);
+      return next;
+    });
+
     if (isMatchBack) {
       setIncomingSenderIds((prev) => {
         const next = new Set(prev);
         next.delete(target.id);
         return next;
       });
+      setIncomingCount((prev) => Math.max(0, prev - 1));
     }
 
     const res = await db.likeProfile(user.id, target.id, "interested", isMatchBack);
+
     if (res.matched) {
-      setMatchPopup({ person: target, matchId: res.matchId || target.id });
-      // Remove from discover deck since they are now a mutual match
-      setProfiles((prev) => prev.filter((p) => p.id !== target.id));
+      const mid = res.matchId || `match-${user.id}-${target.id}`;
+      setUserMatches((prev) => {
+        if (prev.some((m) => m.id === mid)) return prev;
+        const low = user.id < target.id ? user.id : target.id;
+        const high = user.id < target.id ? target.id : user.id;
+        return [
+          {
+            id: mid,
+            user_a: low,
+            user_b: high,
+            status: "active",
+            created_at: new Date().toISOString(),
+            partner: target,
+          },
+          ...prev,
+        ];
+      });
+      setMatchPopup({ person: target, matchId: mid });
     } else {
       setFeedbackToast(`⚡ Interested sent to ${target.first_name}!`);
       setTimeout(() => setFeedbackToast(null), 3000);
@@ -177,7 +296,7 @@ export default function Discover() {
     }
   };
 
-  // Fast action: Pass
+  // Fast action: Pass (marks as passed, stays visible in discover with 'Passed' status)
   const handleQuickPass = async (target: Profile) => {
     if (!user) {
       setLoginPrompt(true);
@@ -195,33 +314,56 @@ export default function Discover() {
       next.delete(target.id);
       return next;
     });
-    setProfiles((prev) => prev.filter((p) => p.id !== target.id));
 
     await db.passProfile(user.id, target.id);
+    setFeedbackToast(`✕ Passed on ${target.first_name}. Status marked as Passed.`);
+    setTimeout(() => setFeedbackToast(null), 2500);
 
     if (viewMode === "focus") {
       setIndex((prev) => prev + 1);
     }
   };
 
-  const handleShuffle = () => {
-    setProfiles((prev) => shuffleArray(prev));
+  const handleShuffle = async () => {
+    let current = profiles;
+    if (current.length === 0) {
+      let fresh = await db.getProfiles();
+      if (!fresh || fresh.length === 0) fresh = INITIAL_DEMO_PROFILES;
+      current = user ? fresh.filter((p) => p.id !== user.id) : fresh;
+      if (current.length === 0) current = INITIAL_DEMO_PROFILES;
+    }
+    // Clear search and status filter so all cards are visible in the shuffled order
+    setSearchTerm("");
+    setFilterStatus("All");
+    setProfiles(shuffleArray(current));
     setIndex(0);
-    setFeedbackToast("🔀 Shuffled! Showing new dance partners.");
+    setFeedbackToast("🔀 Shuffled! Discover order refreshed.");
     setTimeout(() => setFeedbackToast(null), 2500);
   };
 
-  const resetAllFilters = () => {
+  const resetAllFilters = async () => {
     setFilterBranch("All");
     setFilterNight("All");
     setFilterStyle("All");
+    setFilterStatus("All");
     setSearchTerm("");
     setIndex(0);
+
+    // Ensure profiles are reloaded if empty
+    if (profiles.length === 0) {
+      let fresh = await db.getProfiles();
+      if (!fresh || fresh.length === 0) fresh = INITIAL_DEMO_PROFILES;
+      const avail = user ? fresh.filter((p) => p.id !== user.id) : fresh;
+      setProfiles(avail.length > 0 ? avail : fresh);
+    }
+
+    setFeedbackToast("🔄 Filters cleared! Showing all BMSCE dancers.");
+    setTimeout(() => setFeedbackToast(null), 2500);
   };
 
   return (
     <AppShell title="Discover Dancers">
-      <div className="mx-auto max-w-4xl space-y-6">
+      <div className="mx-auto max-w-4xl space-y-5">
         {/* Real-time Toast */}
         {feedbackToast && (
           <div className="fixed top-5 left-1/2 -translate-x-1/2 z-50 rounded-2xl bg-[#ffd166] text-black font-extrabold px-4 py-2.5 text-xs shadow-2xl animate-in fade-in slide-in-from-top-3 flex items-center gap-2">
@@ -258,14 +400,14 @@ export default function Discover() {
         {/* Top Discovery Controls Header */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-white/10 pb-4">
           <div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-2xl sm:text-3xl font-black tracking-tight text-white">Find Your Garba Partner</h1>
-              <span className="rounded-full bg-amber-400/10 border border-amber-400/30 px-2 py-0.5 text-[11px] font-bold text-amber-300">
+              <span className="rounded-full bg-amber-400/10 border border-amber-400/30 px-2.5 py-0.5 text-[11px] font-bold text-amber-300">
                 BMSCE 2026 🪩
               </span>
             </div>
             <p className="mt-1 text-xs sm:text-sm text-[#aab0d0]">
-              Discover college dancers, view verified outfits, and match for Navratri nights.
+              Showing all verified BMSCE dancers. Connect, match back, and dance together on Navratri nights!
             </p>
           </div>
 
@@ -273,7 +415,7 @@ export default function Discover() {
           <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleShuffle}
-              className="flex items-center gap-1 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold text-[#c5c9e8] hover:border-[#ffd166] hover:text-white transition active:scale-95"
+              className="flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-2 text-xs font-bold text-[#c5c9e8] hover:border-[#ffd166] hover:text-white transition active:scale-95 shadow-sm"
               title="Shuffle dancer order"
             >
               <span>🔀</span>
@@ -309,47 +451,137 @@ export default function Discover() {
         </div>
 
         {/* Search & Quick Filter Bar */}
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-          <div className="relative flex-1">
-            <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-[#aab0d0]">🔍</span>
-            <input
-              type="text"
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              placeholder="Search by name, branch (CSBS, Civil...), style, or bio..."
-              className="w-full rounded-2xl bg-white/5 border border-white/10 pl-10 pr-4 py-2.5 text-xs sm:text-sm text-white outline-none focus:border-[#ffd166] placeholder:text-[#73789e]"
-            />
-            {searchTerm && (
+        <div className="space-y-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            {/* Search Input */}
+            <div className="relative flex-1">
+              <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-sm text-[#aab0d0]">🔍</span>
+              <input
+                type="text"
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                placeholder="Search by student name, ID, branch (CSBS, Civil...), style, or bio..."
+                className="w-full rounded-2xl bg-white/5 border border-white/10 pl-10 pr-10 py-2.5 text-xs sm:text-sm text-white outline-none focus:border-[#ffd166] placeholder:text-[#73789e] transition shadow-inner"
+              />
+              {searchTerm && (
+                <button
+                  onClick={() => setSearchTerm("")}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs bg-white/10 hover:bg-white/20 text-[#c5c9e8] hover:text-white rounded-full h-5 w-5 flex items-center justify-center transition"
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            {/* Filter Toggle & Reset */}
+            <div className="flex items-center gap-2">
               <button
-                onClick={() => setSearchTerm("")}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-xs text-[#aab0d0] hover:text-white"
+                onClick={() => setShowFilters(!showFilters)}
+                className={`flex items-center gap-1.5 rounded-2xl border px-3.5 py-2.5 text-xs font-bold transition ${
+                  showFilters || filterBranch !== "All" || filterNight !== "All" || filterStyle !== "All"
+                    ? "border-[#ffd166] bg-[#ffd166]/15 text-[#ffd166]"
+                    : "border-white/10 bg-white/5 text-[#c5c9e8] hover:border-white/30"
+                }`}
               >
-                ✕
+                <span>⚙ Filters</span>
+                {(filterBranch !== "All" || filterNight !== "All" || filterStyle !== "All") && (
+                  <span className="h-1.5 w-1.5 rounded-full bg-[#ffd166]" />
+                )}
               </button>
-            )}
+
+              {(filterBranch !== "All" ||
+                filterNight !== "All" ||
+                filterStyle !== "All" ||
+                filterStatus !== "All" ||
+                searchTerm) && (
+                <button
+                  onClick={resetAllFilters}
+                  className="text-xs text-[#ffd166] hover:underline font-bold px-2 py-1"
+                >
+                  Reset All
+                </button>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          {/* Quick Status Filter Pills (Shows all IDs with sent, interested, match, passed) */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none text-xs">
             <button
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex items-center gap-1.5 rounded-2xl border px-3.5 py-2.5 text-xs font-bold transition ${
-                showFilters || filterBranch !== "All" || filterNight !== "All" || filterStyle !== "All"
-                  ? "border-[#ffd166] bg-[#ffd166]/15 text-[#ffd166]"
-                  : "border-white/10 bg-white/5 text-[#c5c9e8] hover:border-white/30"
+              onClick={() => setFilterStatus("All")}
+              className={`rounded-xl px-3 py-1.5 font-bold transition shrink-0 flex items-center gap-1.5 ${
+                filterStatus === "All"
+                  ? "bg-[#ffd166] text-black shadow-md font-black"
+                  : "bg-white/5 text-[#c5c9e8] hover:bg-white/10 border border-white/10"
               }`}
             >
-              <span>⚙ Filters</span>
-              {(filterBranch !== "All" || filterNight !== "All" || filterStyle !== "All") && (
-                <span className="h-1.5 w-1.5 rounded-full bg-[#ffd166]" />
-              )}
+              <span>All IDs</span>
+              <span className="rounded-full bg-black/20 px-1.5 py-0.2 text-[10px]">
+                {statusCounts.total}
+              </span>
             </button>
 
-            {(filterBranch !== "All" || filterNight !== "All" || filterStyle !== "All" || searchTerm) && (
+            {statusCounts.matches > 0 && (
               <button
-                onClick={resetAllFilters}
-                className="text-xs text-[#aab0d0] hover:text-white px-2 py-1"
+                onClick={() => setFilterStatus("matches")}
+                className={`rounded-xl px-3 py-1.5 font-bold transition shrink-0 flex items-center gap-1.5 ${
+                  filterStatus === "matches"
+                    ? "bg-emerald-400 text-black shadow-md font-black"
+                    : "bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 border border-emerald-500/30"
+                }`}
               >
-                Reset
+                <span>✨ Matches</span>
+                <span className="rounded-full bg-black/20 px-1.5 py-0.2 text-[10px]">
+                  {statusCounts.matches}
+                </span>
+              </button>
+            )}
+
+            {statusCounts.incoming > 0 && (
+              <button
+                onClick={() => setFilterStatus("incoming")}
+                className={`rounded-xl px-3 py-1.5 font-bold transition shrink-0 flex items-center gap-1.5 ${
+                  filterStatus === "incoming"
+                    ? "bg-amber-400 text-black shadow-md font-black"
+                    : "bg-amber-500/10 text-amber-300 hover:bg-amber-500/20 border border-amber-500/30"
+                }`}
+              >
+                <span>⚡ Interested in You</span>
+                <span className="rounded-full bg-black/20 px-1.5 py-0.2 text-[10px]">
+                  {statusCounts.incoming}
+                </span>
+              </button>
+            )}
+
+            {statusCounts.sent > 0 && (
+              <button
+                onClick={() => setFilterStatus("sent")}
+                className={`rounded-xl px-3 py-1.5 font-bold transition shrink-0 flex items-center gap-1.5 ${
+                  filterStatus === "sent"
+                    ? "bg-cyan-400 text-black shadow-md font-black"
+                    : "bg-cyan-500/10 text-cyan-300 hover:bg-cyan-500/20 border border-cyan-500/30"
+                }`}
+              >
+                <span>✓ Sent</span>
+                <span className="rounded-full bg-black/20 px-1.5 py-0.2 text-[10px]">
+                  {statusCounts.sent}
+                </span>
+              </button>
+            )}
+
+            {statusCounts.passed > 0 && (
+              <button
+                onClick={() => setFilterStatus("passed")}
+                className={`rounded-xl px-3 py-1.5 font-bold transition shrink-0 flex items-center gap-1.5 ${
+                  filterStatus === "passed"
+                    ? "bg-slate-400 text-black shadow-md font-black"
+                    : "bg-white/5 text-[#73789e] hover:bg-white/10 border border-white/10"
+                }`}
+              >
+                <span>✕ Passed</span>
+                <span className="rounded-full bg-black/20 px-1.5 py-0.2 text-[10px]">
+                  {statusCounts.passed}
+                </span>
               </button>
             )}
           </div>
@@ -434,7 +666,7 @@ export default function Discover() {
               </div>
               <h2 className="mt-4 text-2xl font-black">Login Required</h2>
               <p className="mt-2 text-sm leading-6 text-[#c5c9e8]">
-                To protect student safety and stop unauthorized viewing, you must log in with your verified BMSCE account before expressing interest or chatting.
+                To express interest, match back, or chat with verified BMSCE dancers, please sign in with your student account.
               </p>
               <div className="mt-6 flex flex-col gap-2.5">
                 <Link href="/login" className="w-full">
@@ -444,67 +676,30 @@ export default function Discover() {
                   onClick={() => setLoginPrompt(false)}
                   className="mt-2 text-xs text-[#aab0d0] hover:text-white"
                 >
-                  Cancel
+                  Keep Browsing as Guest
                 </button>
               </div>
             </Card>
           </div>
         )}
 
-        {/* Guest teaser list */}
-        {!user ? (
-          <Card className="p-5 sm:p-7">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-black">BMSCE students on the floor</h2>
-                <p className="text-xs text-[#aab0d0]">Sign in to reveal full photos, styles & direct chat</p>
-              </div>
-              <Badge className="bg-white/10 text-[#ffd166]">{publicNames.length || "—"} registered</Badge>
-            </div>
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {(publicNames.length
-                ? publicNames
-                : [
-                    { id: "sample-1", first_name: "Aditya" },
-                    { id: "sample-2", first_name: "Ananya" },
-                    { id: "sample-3", first_name: "Sneha" },
-                    { id: "sample-4", first_name: "Rohan" },
-                  ]
-              ).map((entry) => (
-                <button
-                  key={entry.id}
-                  onClick={() => setLoginPrompt(true)}
-                  className="flex min-h-16 items-center gap-3 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-left transition hover:border-[#ffd166]/60 hover:bg-[#ffd166]/10"
-                >
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#f35ca8]/30 to-[#ffd166]/20 text-sm font-black text-[#ffd166]">
-                    {entry.first_name.slice(0, 1)}
-                  </span>
-                  <div className="min-w-0">
-                    <p className="font-bold text-white text-xs truncate">{entry.first_name}</p>
-                    <p className="text-[10px] text-[#73789e]">BMSCE Student</p>
-                  </div>
-                  <span className="ml-auto text-xs text-[#73789e]">🔒</span>
-                </button>
-              ))}
-            </div>
-            <Button className="mt-6 w-full" onClick={() => setLoginPrompt(true)}>
-              Sign in with BMSCE Account to Explore All Profiles →
-            </Button>
-          </Card>
-        ) : filteredProfiles.length === 0 ? (
-          /* Empty Search / Filter State */
-          <Card className="py-16 text-center border-dashed border-white/20">
-            <div className="text-5xl">👀</div>
-            <h2 className="mt-4 text-xl font-bold text-white">No dancers found matching your criteria</h2>
-            <p className="mt-2 text-xs sm:text-sm text-[#aab0d0] max-w-sm mx-auto leading-relaxed">
-              Try adjusting your branch, night, or search query to find more BMSCE partners.
+        {/* Content Body: Empty State OR Grid View OR Focus View */}
+        {filteredProfiles.length === 0 ? (
+          /* Empty Search / Filter State with working reset and shuffle buttons */
+          <Card className="py-14 text-center border-dashed border-white/20 bg-[#121533]">
+            <div className="text-5xl">🔍</div>
+            <h2 className="mt-4 text-xl font-bold text-white">
+              {searchTerm ? `No dancers found matching "${searchTerm}"` : "No dancers match your filter criteria"}
+            </h2>
+            <p className="mt-2 text-xs sm:text-sm text-[#aab0d0] max-w-md mx-auto leading-relaxed">
+              We couldn&apos;t find any BMSCE dancers with those specific settings. Clear your search or reset filters to see all campus profiles!
             </p>
-            <div className="mt-6 flex justify-center gap-3">
-              <Button onClick={resetAllFilters} className="text-xs">
-                Reset All Filters
+            <div className="mt-6 flex flex-wrap justify-center gap-3">
+              <Button onClick={resetAllFilters} className="text-xs font-bold">
+                🔄 Clear Search & Reset Filters
               </Button>
-              <Button variant="ghost" onClick={handleShuffle} className="text-xs">
-                🔀 Shuffle Dancers
+              <Button variant="ghost" onClick={handleShuffle} className="text-xs font-bold border border-white/10">
+                🔀 Shuffle & Show All Dancers
               </Button>
             </div>
           </Card>
@@ -515,17 +710,22 @@ export default function Discover() {
           <div className="space-y-4">
             <div className="flex items-center justify-between text-xs text-[#aab0d0] px-1">
               <span>
-                Showing <b>{filteredProfiles.length}</b> available BMSCE dancer{filteredProfiles.length === 1 ? "" : "s"}:
+                Showing <b>{filteredProfiles.length}</b> BMSCE dancer{filteredProfiles.length === 1 ? "" : "s"}
+                {searchTerm && ` for "${searchTerm}"`}
+                {filterStatus !== "All" && ` in ${filterStatus}`}:
               </span>
-              <span className="text-[11px] text-[#ffd166]">
-                Tap &ldquo;Interested&rdquo; to connect instantly
+              <span className="text-[11px] text-[#ffd166] font-semibold">
+                Tap to connect or match back instantly
               </span>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredProfiles.map((dancer) => {
-                const hasIncoming = incomingSenderIds.has(dancer.id);
-                const isLiked = likedUserIds.has(dancer.id) && !hasIncoming;
+                const isMatched = matchByPartnerId.has(dancer.id);
+                const matchId = matchByPartnerId.get(dancer.id);
+                const hasIncoming = incomingSenderIds.has(dancer.id) && !isMatched;
+                const isLiked = likedUserIds.has(dancer.id) && !isMatched && !hasIncoming;
+                const isPassed = passedUserIds.has(dancer.id) && !isMatched && !hasIncoming;
                 const hasPhoto = isImageSrc(dancer.photo_path);
 
                 const matchPct = myProfile
@@ -565,26 +765,43 @@ export default function Discover() {
                           </div>
                         )}
 
-                        {/* Badges on Avatar */}
-                        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5">
-                          <span className="rounded-full bg-black/60 backdrop-blur-md border border-white/20 px-2 py-0.5 text-[10px] font-bold text-white">
+                        {/* Badges on Avatar: Branch & Year */}
+                        <div className="absolute top-2.5 left-2.5 flex items-center gap-1.5 flex-wrap">
+                          <span className="rounded-full bg-black/70 backdrop-blur-md border border-white/20 px-2 py-0.5 text-[10px] font-bold text-white">
                             {dancer.branch} · Yr {dancer.year}
+                          </span>
+                          <span className="rounded-full bg-black/60 backdrop-blur-md border border-white/15 px-2 py-0.5 text-[9px] font-mono text-[#ffd166]">
+                            ID: {dancer.id}
                           </span>
                         </div>
 
-                        {hasIncoming ? (
-                          <div className="absolute top-2.5 right-2.5">
-                            <span className="rounded-full bg-gradient-to-r from-amber-400 to-rose-500 text-black font-black text-[10px] px-2.5 py-0.5 shadow-lg border border-amber-300/40 animate-pulse">
-                              ⚡ Interested in You!
+                        {/* Top-Right Status Badge */}
+                        <div className="absolute top-2.5 right-2.5">
+                          {isMatched ? (
+                            <span className="rounded-full bg-gradient-to-r from-emerald-400 to-teal-400 text-black font-black text-[10px] px-2.5 py-0.5 shadow-lg border border-emerald-300/40 flex items-center gap-1">
+                              <span>✨</span>
+                              <span>Matched</span>
                             </span>
-                          </div>
-                        ) : (
-                          <div className="absolute top-2.5 right-2.5">
+                          ) : hasIncoming ? (
+                            <span className="rounded-full bg-gradient-to-r from-amber-400 to-rose-500 text-black font-black text-[10px] px-2.5 py-0.5 shadow-lg border border-amber-300/40 animate-pulse flex items-center gap-1">
+                              <span>⚡</span>
+                              <span>Interested in You!</span>
+                            </span>
+                          ) : isLiked ? (
+                            <span className="rounded-full bg-cyan-500/20 text-cyan-300 border border-cyan-400/50 font-bold text-[10px] px-2.5 py-0.5 backdrop-blur-md flex items-center gap-1">
+                              <span>✓</span>
+                              <span>Interest Sent</span>
+                            </span>
+                          ) : isPassed ? (
+                            <span className="rounded-full bg-black/60 text-[#aab0d0] border border-white/20 font-semibold text-[10px] px-2 py-0.5 backdrop-blur-md">
+                              ✕ Passed
+                            </span>
+                          ) : (
                             <Badge className="bg-[#ff8b4d]/90 text-black font-black text-[10px] shadow-md border-0">
                               🔥 {matchPct}% match
                             </Badge>
-                          </div>
-                        )}
+                          )}
+                        </div>
 
                         <div className="absolute bottom-2 left-2.5">
                           <span className="text-[10px] font-semibold text-emerald-300 bg-black/60 backdrop-blur-md border border-emerald-500/40 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -603,7 +820,7 @@ export default function Discover() {
                               {dancer.age && <span className="text-xs font-normal text-[#aab0d0]">, {dancer.age}</span>}
                             </h2>
                             <p className="text-xs text-[#ffd166] font-semibold mt-0.5">
-                              {dancer.experience} Dancer
+                              {dancer.experience} Dancer · {dancer.partner_preference}
                             </p>
                           </div>
                         </div>
@@ -635,35 +852,96 @@ export default function Discover() {
                     <div className="p-4 pt-0 border-t border-white/5 mt-3 flex items-center justify-between gap-2">
                       <Link
                         href={`/profile/${dancer.id}`}
-                        className="text-xs text-[#aab0d0] hover:text-white transition font-semibold"
+                        className="text-xs text-[#aab0d0] hover:text-[#ffd166] transition font-semibold"
                       >
                         Profile →
                       </Link>
 
                       <div className="flex items-center gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handleQuickPass(dancer)}
-                          className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-bold text-[#73789e] hover:text-white transition"
-                          title="Skip dancer"
-                        >
-                          ✕ Pass
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleQuickLike(dancer)}
-                          disabled={isLiked}
-                          className={`rounded-xl px-4 py-1.5 text-xs font-black shadow-md transition flex items-center gap-1.5 active:scale-95 ${
-                            hasIncoming
-                              ? "bg-gradient-to-r from-amber-400 to-rose-400 text-black hover:opacity-95 ring-2 ring-amber-400/50"
-                              : isLiked
-                              ? "bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 cursor-default"
-                              : "bg-gradient-to-r from-[#ffd166] to-[#ff9e3b] text-black hover:opacity-95"
-                          }`}
-                        >
-                          <span>{hasIncoming ? "❤️ Match Back" : isLiked ? "✓ Sent" : "⚡ Interested"}</span>
-                        </button>
+                        {isMatched ? (
+                          <Link href={`/chat/${matchId || dancer.id}`}>
+                            <button
+                              type="button"
+                              className="rounded-xl px-4 py-1.5 text-xs font-black shadow-md transition flex items-center gap-1.5 bg-gradient-to-r from-emerald-400 to-teal-400 text-black hover:opacity-95 active:scale-95"
+                            >
+                              <span>💬</span>
+                              <span>Chat Now</span>
+                            </button>
+                          </Link>
+                        ) : hasIncoming ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickPass(dancer)}
+                              className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-bold text-[#73789e] hover:text-white transition"
+                              title="Skip dancer"
+                            >
+                              ✕ Pass
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickLike(dancer)}
+                              className="rounded-xl px-4 py-1.5 text-xs font-black shadow-md transition flex items-center gap-1.5 active:scale-95 bg-gradient-to-r from-amber-400 to-rose-400 text-black hover:opacity-95 ring-2 ring-amber-400/50"
+                            >
+                              <span>❤️</span>
+                              <span>Match Back</span>
+                            </button>
+                          </>
+                        ) : isLiked ? (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickPass(dancer)}
+                              className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-2.5 py-1.5 text-xs font-bold text-[#73789e] hover:text-white transition"
+                              title="Pass"
+                            >
+                              ✕
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setFeedbackToast(`Interest already sent to ${dancer.first_name}! Awaiting their response.`);
+                                setTimeout(() => setFeedbackToast(null), 2500);
+                              }}
+                              className="rounded-xl px-4 py-1.5 text-xs font-black transition flex items-center gap-1.5 bg-cyan-500/20 border border-cyan-400/40 text-cyan-300"
+                            >
+                              <span>✓</span>
+                              <span>Sent</span>
+                            </button>
+                          </>
+                        ) : isPassed ? (
+                          <>
+                            <span className="text-[11px] text-[#73789e] px-1 font-semibold">Passed</span>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickLike(dancer)}
+                              className="rounded-xl px-3 py-1.5 text-xs font-bold shadow-md transition flex items-center gap-1.5 bg-white/10 hover:bg-[#ffd166] hover:text-black text-white active:scale-95"
+                              title="Change mind and express interest"
+                            >
+                              <span>⚡</span>
+                              <span>Interested</span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickPass(dancer)}
+                              className="rounded-xl border border-white/10 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs font-bold text-[#73789e] hover:text-white transition"
+                              title="Skip dancer"
+                            >
+                              ✕ Pass
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleQuickLike(dancer)}
+                              className="rounded-xl px-4 py-1.5 text-xs font-black shadow-md transition flex items-center gap-1.5 active:scale-95 bg-gradient-to-r from-[#ffd166] to-[#ff9e3b] text-black hover:opacity-95"
+                            >
+                              <span>⚡</span>
+                              <span>Interested</span>
+                            </button>
+                          </>
+                        )}
                       </div>
                     </div>
                   </Card>
@@ -677,7 +955,7 @@ export default function Discover() {
              ======================================================== */
           person && (
             <Card className="mx-auto max-w-md overflow-hidden p-0 border-white/10 shadow-2xl">
-              {/* Photo Area (WITH FIXED IMAGE RENDERING) */}
+              {/* Photo Area */}
               <div className="relative h-72 w-full overflow-hidden bg-gradient-to-br from-[#4b1d5c] via-[#2d2568] to-[#121c4b] flex items-center justify-center">
                 {isImageSrc(person.photo_path) ? (
                   <img
@@ -692,6 +970,12 @@ export default function Discover() {
                     </div>
                   </div>
                 )}
+
+                <div className="absolute top-3 left-3 flex items-center gap-2">
+                  <span className="text-xs font-mono text-[#ffd166] bg-black/60 backdrop-blur-md border border-white/20 px-2.5 py-1 rounded-full">
+                    ID: {person.id}
+                  </span>
+                </div>
 
                 <div className="absolute bottom-3 left-3">
                   <span className="text-xs font-semibold text-emerald-400 bg-black/60 backdrop-blur-md border border-emerald-500/30 px-3 py-1 rounded-full flex items-center gap-1.5">
@@ -712,9 +996,17 @@ export default function Discover() {
                       {person.branch} · Year {person.year} · <span className="text-[#ffd166]">{person.experience}</span>
                     </p>
                   </div>
-                  <Badge className="bg-[#ff8b4d]/20 text-[#ffd166] border border-[#ff8b4d]/30 font-bold">
-                    🔥 95% match
-                  </Badge>
+                  {matchByPartnerId.has(person.id) ? (
+                    <Badge className="bg-emerald-400 text-black font-black">✨ Matched</Badge>
+                  ) : incomingSenderIds.has(person.id) ? (
+                    <Badge className="bg-amber-400 text-black font-black animate-pulse">⚡ Interested in You!</Badge>
+                  ) : likedUserIds.has(person.id) ? (
+                    <Badge className="bg-cyan-500/20 text-cyan-300 border-cyan-400/40">✓ Interest Sent</Badge>
+                  ) : (
+                    <Badge className="bg-[#ff8b4d]/20 text-[#ffd166] border border-[#ff8b4d]/30 font-bold">
+                      🔥 95% match
+                    </Badge>
+                  )}
                 </div>
 
                 <div className="mt-4">
@@ -740,43 +1032,72 @@ export default function Discover() {
 
                 {/* Actions */}
                 <div className="mt-6 flex gap-3">
-                  <Button
-                    variant="secondary"
-                    className="flex-1 text-base flex items-center justify-center gap-2"
-                    onClick={() => handleQuickPass(person)}
-                  >
-                    <span>✕</span>
-                    <span className="text-sm font-bold">Pass</span>
-                  </Button>
-                  <Button
-                    className={`flex-1 text-base flex items-center justify-center gap-2 ${
-                      incomingSenderIds.has(person.id)
-                        ? "bg-gradient-to-r from-amber-400 to-rose-400 text-black font-black ring-2 ring-amber-400/50"
-                        : likedUserIds.has(person.id)
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-default"
-                        : "bg-gradient-to-r from-[#ffd166] to-[#f35ca8] text-black font-black"
-                    }`}
-                    onClick={() => handleQuickLike(person)}
-                    disabled={likedUserIds.has(person.id) && !incomingSenderIds.has(person.id)}
-                  >
-                    <span>{incomingSenderIds.has(person.id) ? "❤️" : likedUserIds.has(person.id) ? "✓" : "♥"}</span>
-                    <span className="text-sm font-black">
-                      {incomingSenderIds.has(person.id)
-                        ? "Match Back"
-                        : likedUserIds.has(person.id)
-                        ? "✓ Sent"
-                        : "Interested"}
-                    </span>
-                  </Button>
+                  {matchByPartnerId.has(person.id) ? (
+                    <Link href={`/chat/${matchByPartnerId.get(person.id)}`} className="w-full">
+                      <Button className="w-full bg-gradient-to-r from-emerald-400 to-teal-400 text-black font-black text-base flex items-center justify-center gap-2">
+                        <span>💬</span>
+                        <span>Open Chat</span>
+                      </Button>
+                    </Link>
+                  ) : (
+                    <>
+                      <Button
+                        variant="secondary"
+                        className="flex-1 text-base flex items-center justify-center gap-2"
+                        onClick={() => handleQuickPass(person)}
+                      >
+                        <span>✕</span>
+                        <span className="text-sm font-bold">Pass</span>
+                      </Button>
+                      <Button
+                        className={`flex-1 text-base flex items-center justify-center gap-2 ${
+                          incomingSenderIds.has(person.id)
+                            ? "bg-gradient-to-r from-amber-400 to-rose-400 text-black font-black ring-2 ring-amber-400/50"
+                            : likedUserIds.has(person.id)
+                            ? "bg-cyan-500/20 text-cyan-300 border border-cyan-500/40"
+                            : "bg-gradient-to-r from-[#ffd166] to-[#f35ca8] text-black font-black"
+                        }`}
+                        onClick={() => handleQuickLike(person)}
+                        disabled={likedUserIds.has(person.id) && !incomingSenderIds.has(person.id)}
+                      >
+                        <span>
+                          {incomingSenderIds.has(person.id)
+                            ? "❤️"
+                            : likedUserIds.has(person.id)
+                            ? "✓"
+                            : "⚡"}
+                        </span>
+                        <span className="text-sm font-black">
+                          {incomingSenderIds.has(person.id)
+                            ? "Match Back"
+                            : likedUserIds.has(person.id)
+                            ? "✓ Sent"
+                            : "Interested"}
+                        </span>
+                      </Button>
+                    </>
+                  )}
                 </div>
 
-                <div className="mt-4 text-center">
+                <div className="mt-4 flex items-center justify-between text-xs text-[#aab0d0]">
+                  <button
+                    onClick={() => setIndex((prev) => Math.max(0, prev - 1))}
+                    className="hover:text-white"
+                  >
+                    ← Previous
+                  </button>
                   <Link
                     href={`/profile/${person.id}`}
-                    className="text-xs text-[#aab0d0] hover:text-[#ffd166] transition inline-flex items-center gap-1"
+                    className="hover:text-[#ffd166] transition inline-flex items-center gap-1"
                   >
-                    View complete profile & credentials →
+                    View complete profile →
                   </Link>
+                  <button
+                    onClick={() => setIndex((prev) => prev + 1)}
+                    className="hover:text-white"
+                  >
+                    Next →
+                  </button>
                 </div>
               </div>
             </Card>

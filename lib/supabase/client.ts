@@ -255,6 +255,98 @@ export const INITIAL_DEMO_PROFILES: Profile[] = [
     created_at: new Date(Date.now() - 86400000 * 6).toISOString(),
     updated_at: new Date().toISOString(),
   },
+  {
+    id: "demo-kabir-7",
+    first_name: "Kabir",
+    age: 20,
+    gender: "Man",
+    branch: "CSBS",
+    year: 3,
+    bio: "CSBS student obsessed with high-energy Garba rhythms! Looking for someone to join our hostel crew for back-to-back fast rounds.",
+    experience: "Intermediate",
+    styles: ["Bollywood Garba", "Fast Garba", "2-Taali"],
+    looking_for: ["Garba partner", "Group vibe"],
+    available_nights: [1, 3, 5, 7, 9],
+    interests: ["music", "business", "dance"],
+    partner_preference: "Everyone",
+    photo_path: "🪘",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: true,
+    created_at: new Date(Date.now() - 86400000 * 7).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "demo-diya-8",
+    first_name: "Diya",
+    age: 19,
+    gender: "Woman",
+    branch: "Civil",
+    year: 2,
+    bio: "Civil engineering 2nd year. Love vibrant traditional bandhani dupattas, sync dandiya clacks, and late-night festive photos!",
+    experience: "Intermediate",
+    styles: ["Traditional Garba", "Dandiya", "3-Taali"],
+    looking_for: ["Garba partner"],
+    available_nights: [2, 4, 6, 8],
+    interests: ["architecture", "photography", "festivals"],
+    partner_preference: "Everyone",
+    photo_path: "🪅",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: true,
+    created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "demo-meera-9",
+    first_name: "Meera",
+    age: 18,
+    gender: "Woman",
+    branch: "EEE",
+    year: 1,
+    bio: "1st year EEE. Super excited for my first BMSCE Navratri! Quick learner, eager to practice steps with a fun partner.",
+    experience: "Beginner",
+    styles: ["Bollywood Garba", "Dandiya"],
+    looking_for: ["Garba partner", "Friends"],
+    available_nights: [1, 2, 3, 7, 8],
+    interests: ["electronics", "art", "music"],
+    partner_preference: "Everyone",
+    photo_path: "🥻",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: true,
+    created_at: new Date(Date.now() - 86400000 * 9).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "demo-yash-10",
+    first_name: "Yash",
+    age: 21,
+    gender: "Man",
+    branch: "Biotech",
+    year: 4,
+    bio: "Final year Biotech student. Dedicated Garba fan, love the energy of the BMSCE center court. Let's make every night count!",
+    experience: "Advanced",
+    styles: ["Fast Garba", "Traditional Garba", "3-Taali"],
+    looking_for: ["Garba partner"],
+    available_nights: [3, 4, 5, 8, 9],
+    interests: ["science", "fitness", "garba"],
+    partner_preference: "Everyone",
+    photo_path: "🔥",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: true,
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
 ];
 
 // In-browser mock state storage keys
@@ -289,23 +381,33 @@ function setLocalStore<T>(key: string, value: T): void {
 export const db = {
   async getProfiles(): Promise<Profile[]> {
     const client = getSupabaseClient();
+    let remoteProfiles: Profile[] = [];
     if (client) {
       try {
         const { data, error } = await client
           .from("profiles")
           .select("*")
-          .eq("onboarding_complete", true)
           .eq("is_hidden", false)
           .eq("is_suspended", false)
           .eq("is_banned", false);
-        if (!error && data) {
-          return data as Profile[];
+        if (!error && data && data.length > 0) {
+          remoteProfiles = data as Profile[];
         }
       } catch (err) {
         console.warn("Supabase profiles query failed:", err);
       }
     }
-    return getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    let localProfiles = getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    if (!Array.isArray(localProfiles) || localProfiles.length === 0) {
+      localProfiles = INITIAL_DEMO_PROFILES;
+      setLocalStore(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    }
+    const map = new Map<string, Profile>();
+    // Always include INITIAL_DEMO_PROFILES so dancers are always discoverable
+    INITIAL_DEMO_PROFILES.forEach((p) => map.set(p.id, p));
+    localProfiles.forEach((p) => map.set(p.id, p));
+    remoteProfiles.forEach((p) => map.set(p.id, p));
+    return Array.from(map.values());
   },
 
   async getPublicProfileNames(): Promise<Pick<Profile, "id" | "first_name">[]> {
@@ -313,12 +415,12 @@ export const db = {
     if (client) {
       try {
         const { data, error } = await client.rpc("get_public_profile_names");
-        if (!error && data) return data as Pick<Profile, "id" | "first_name">[];
+        if (!error && data && data.length > 0) return data as Pick<Profile, "id" | "first_name">[];
       } catch (err) {
         console.warn("Supabase get_public_profile_names rpc failed:", err);
       }
     }
-    const profiles = getLocalStore<Profile[]>(PROFILES_KEY, INITIAL_DEMO_PROFILES);
+    const profiles = await this.getProfiles();
     return profiles.map((p) => ({ id: p.id, first_name: p.first_name }));
   },
 
