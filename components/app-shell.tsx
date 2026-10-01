@@ -67,13 +67,13 @@ export function AppShell({
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2">
             {user ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <NotificationTab userId={user.id} />
                 <Link
                   href="/profile/me"
-                  className="flex items-center gap-2.5 rounded-full bg-white/5 pl-1.5 pr-3.5 py-1 text-xs text-[#c5c9e8] hover:bg-white/10 border border-white/10 transition"
+                  className="flex items-center gap-2 rounded-full bg-white/5 pl-1.5 pr-2.5 sm:pr-3.5 py-1 text-xs text-[#c5c9e8] hover:bg-white/10 border border-white/10 transition"
                 >
                   <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/10 text-sm overflow-hidden border border-white/20">
                     {isImageSrc(profile?.photo_path) ? (
@@ -86,13 +86,13 @@ export function AppShell({
                       <span className="select-none">{profile?.photo_path || "👤"}</span>
                     )}
                   </div>
-                  <span className="font-semibold text-white max-w-[120px] truncate">
+                  <span className="font-semibold text-white max-w-[70px] sm:max-w-[120px] truncate">
                     {profile?.first_name || user.email.split("@")[0]}
                   </span>
                 </Link>
                 <button
                   onClick={() => signOut()}
-                  className="rounded-full px-3 py-1.5 text-xs font-medium text-[#ffd166] hover:bg-white/5"
+                  className="rounded-full px-2 sm:px-3 py-1.5 text-xs font-medium text-[#ffd166] hover:bg-white/5"
                 >
                   Sign out
                 </button>

@@ -74,7 +74,11 @@ function MatchesContent() {
   const handleMatchBack = async (interest: IncomingInterest) => {
     if (!user) return;
     const targetUserId = interest.from_user;
-    const res = await db.likeProfile(user.id, targetUserId, "interested");
+
+    // Optimistically remove from incoming interests
+    setInterests((prev) => prev.filter((i) => i.from_user !== targetUserId));
+
+    const res = await db.likeProfile(user.id, targetUserId, "interested", true);
 
     // Refresh matches and interests
     const [freshMatches, freshInterests] = await Promise.all([
@@ -86,6 +90,7 @@ function MatchesContent() {
 
     const partnerName = interest.sender_profile?.first_name || "your new partner";
     setActionNotice(`✨ It's a Match! You and ${partnerName} can now chat.`);
+    setActiveTab("matches");
     setTimeout(() => setActionNotice(null), 6000);
   };
 

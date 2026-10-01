@@ -518,44 +518,70 @@ export const db = {
   async likeProfile(
     fromUserId: string,
     toUserId: string,
-    kind: LikeKind = "interested"
+    kind: LikeKind = "interested",
+    isExplicitMatchBack = false
   ): Promise<{ matched: boolean; matchId?: string }> {
     const client = getSupabaseClient();
-    let isMatched = false;
+    let isMatched = Boolean(isExplicitMatchBack);
     let matchId: string | undefined = undefined;
 
-    // 1. Persist like in Supabase
+    // Check if toUserId already showed interest in fromUserId in local incoming cache
+    const cachedKey = `garbamate_cached_incoming_${fromUserId}`;
+    const cachedIncoming = getLocalStore<any[]>(cachedKey, []);
+    if (cachedIncoming.some((c) => c.from_user === toUserId)) {
+      isMatched = true;
+    }
+
+    // Check if toUserId liked fromUserId in localLikes
+    const localLikes = getLocalStore<Like[]>(LIKES_KEY, []);
+    if (localLikes.some((l) => l.from_user === toUserId && l.to_user === fromUserId)) {
+      isMatched = true;
+    }
+
+    // 1. Try Supabase official atomic SECURITY DEFINER function 'like_user'
     if (client) {
+      try {
+        const { data: rpcData, error: rpcError } = await client.rpc("like_user", {
+          target: toUserId,
+          kind,
+        });
+
+        if (!rpcError && rpcData) {
+          if (rpcData.matched) {
+            isMatched = true;
+            if (rpcData.match_id) {
+              matchId = rpcData.match_id;
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("Supabase like_user RPC warning:", err);
+      }
+
+      // Ensure the outgoing like row exists in Supabase likes table
       try {
         await client
           .from("likes")
           .upsert({ from_user: fromUserId, to_user: toUserId, kind }, { onConflict: "from_user,to_user" });
 
-        const { data: rec } = await client
-          .from("likes")
-          .select("id")
-          .eq("from_user", toUserId)
-          .eq("to_user", fromUserId);
-
-        if (rec && rec.length > 0) {
-          const low = fromUserId < toUserId ? fromUserId : toUserId;
-          const high = fromUserId < toUserId ? toUserId : fromUserId;
-          const { data: mData } = await client
-            .from("matches")
-            .upsert({ user_a: low, user_b: high, status: "active" }, { onConflict: "user_a,user_b" })
+        // If not already matched, check if reciprocal like exists in Supabase
+        if (!isMatched) {
+          const { data: rec } = await client
+            .from("likes")
             .select("id")
-            .single();
+            .eq("from_user", toUserId)
+            .eq("to_user", fromUserId);
 
-          isMatched = true;
-          matchId = mData?.id || `match-${low}-${high}`;
+          if (rec && rec.length > 0) {
+            isMatched = true;
+          }
         }
       } catch (err) {
-        console.warn("Supabase likeProfile failed:", err);
+        console.warn("Supabase likes upsert error:", err);
       }
     }
 
-    // 2. Persist like in LocalStorage
-    const localLikes = getLocalStore<Like[]>(LIKES_KEY, []);
+    // 2. Persist outgoing like in LocalStorage
     const existingIdx = localLikes.findIndex((l) => l.from_user === fromUserId && l.to_user === toUserId);
     const newLike: Like = {
       id: `like-${Date.now()}`,
@@ -569,35 +595,138 @@ export const db = {
     } else {
       localLikes.push(newLike);
     }
+
+    // If matching back, also make sure reciprocal like is registered locally if missing
+    if (isMatched) {
+      if (!localLikes.some((l) => l.from_user === toUserId && l.to_user === fromUserId)) {
+        localLikes.push({
+          id: `like-${toUserId}-${fromUserId}`,
+          from_user: toUserId,
+          to_user: fromUserId,
+          kind: "interested",
+          created_at: new Date().toISOString(),
+        });
+      }
+    }
     setLocalStore(LIKES_KEY, localLikes);
 
-    const reciprocal = localLikes.find((l) => l.from_user === toUserId && l.to_user === fromUserId);
-    if (reciprocal && !isMatched) {
-      const low = fromUserId < toUserId ? fromUserId : toUserId;
-      const high = fromUserId < toUserId ? toUserId : fromUserId;
-      matchId = `match-${low}-${high}`;
-      const localMatches = getLocalStore<Match[]>(MATCHES_KEY, []);
-      if (!localMatches.some((m) => m.id === matchId)) {
-        const allProfiles = getLocalStore<Profile[]>(PROFILES_KEY, []);
-        const partner = allProfiles.find((p) => p.id === toUserId);
-        localMatches.push({
-          id: matchId,
-          user_a: low,
-          user_b: high,
-          status: "active",
-          created_at: new Date().toISOString(),
-          partner,
-        });
-        setLocalStore(MATCHES_KEY, localMatches);
+    // 3. If matched, create match record reliably in Supabase and LocalStorage
+    const low = fromUserId < toUserId ? fromUserId : toUserId;
+    const high = fromUserId < toUserId ? toUserId : fromUserId;
+    const effectiveMatchId: string = matchId || `match-${low}-${high}`;
+    matchId = effectiveMatchId;
+
+    if (isMatched) {
+      // Create/ensure match in Supabase
+      if (client) {
+        try {
+          const { data: mData, error: mError } = await client
+            .from("matches")
+            .upsert(
+              { user_a: low, user_b: high, status: "active" },
+              { onConflict: "user_a,user_b" }
+            )
+            .select("id")
+            .maybeSingle();
+
+          if (mData?.id) {
+            matchId = mData.id;
+          } else if (mError) {
+            const { data: existingM } = await client
+              .from("matches")
+              .select("id")
+              .eq("user_a", low)
+              .eq("user_b", high)
+              .maybeSingle();
+            if (existingM?.id) {
+              matchId = existingM.id;
+            }
+          }
+        } catch (err) {
+          console.warn("Supabase match upsert warning:", err);
+        }
       }
-      isMatched = true;
+
+      // Create/ensure match in LocalStorage
+      const localMatches = getLocalStore<Match[]>(MATCHES_KEY, []);
+      const finalMatchId: string = matchId || effectiveMatchId;
+      const existingMatchIdx = localMatches.findIndex(
+        (m) => (m.user_a === low && m.user_b === high) || m.id === finalMatchId
+      );
+      const partner = await this.getProfileById(toUserId);
+      const matchObj: Match = {
+        id: finalMatchId,
+        user_a: low,
+        user_b: high,
+        status: "active",
+        created_at: new Date().toISOString(),
+        partner: partner || undefined,
+      };
+      if (existingMatchIdx >= 0) {
+        localMatches[existingMatchIdx] = matchObj;
+      } else {
+        localMatches.unshift(matchObj);
+      }
+      setLocalStore(MATCHES_KEY, localMatches);
+
+      // Clean toUserId from incoming cache on both sides
+      const filteredIncoming = cachedIncoming.filter((c) => c.from_user !== toUserId);
+      setLocalStore(cachedKey, filteredIncoming);
+
+      // Broadcast match created so both devices update their chat and matches immediately
+      this.broadcastMatchCreated(fromUserId, toUserId, finalMatchId);
+    } else {
+      // Broadcast interest notification
+      const senderProfile = await this.getProfileById(fromUserId);
+      this.broadcastInterest(fromUserId, toUserId, isMatched, matchId, senderProfile || undefined);
     }
 
-    // 3. Realtime multi-channel broadcast of interest notification
-    const senderProfile = await this.getProfileById(fromUserId);
-    this.broadcastInterest(fromUserId, toUserId, isMatched, matchId, senderProfile || undefined);
-
     return { matched: isMatched, matchId };
+  },
+
+  broadcastMatchCreated(userA: string, userB: string, matchId: string) {
+    if (typeof window === "undefined") return;
+    const payload = {
+      type: "match_created",
+      user_a: userA,
+      user_b: userB,
+      matchId,
+      timestamp: Date.now(),
+    };
+
+    try {
+      const bc = new BroadcastChannel("garbamate_interests");
+      bc.postMessage(payload);
+      setTimeout(() => bc.close(), 100);
+    } catch {
+      // ignore
+    }
+
+    try {
+      localStorage.setItem("garbamate_match_created_event", JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const chA = client.channel(`interest_alerts:${userA}`);
+        chA.subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            chA.send({ type: "broadcast", event: "match_created", payload });
+          }
+        });
+        const chB = client.channel(`interest_alerts:${userB}`);
+        chB.subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            chB.send({ type: "broadcast", event: "match_created", payload });
+          }
+        });
+      } catch {
+        // ignore
+      }
+    }
   },
 
   cacheIncomingInterest(userId: string, data: any) {
@@ -817,6 +946,15 @@ export const db = {
         result.add(l.to_user);
       }
     });
+
+    // Make sure any user who was passed is NEVER marked as liked/sent
+    const localPasses = getLocalStore<any[]>(PASSES_KEY, []);
+    localPasses.forEach((p) => {
+      if (p.from_user === userId && p.to_user) {
+        result.delete(p.to_user);
+      }
+    });
+
     return result;
   },
 
@@ -1022,6 +1160,20 @@ export const db = {
     const client = getSupabaseClient();
     if (client) {
       try {
+        // Delete any like from fromUserId to toUserId if previously sent
+        await client
+          .from("likes")
+          .delete()
+          .eq("from_user", fromUserId)
+          .eq("to_user", toUserId);
+
+        // Also delete any like from toUserId to fromUserId (the passed incoming interest)
+        await client
+          .from("likes")
+          .delete()
+          .eq("from_user", toUserId)
+          .eq("to_user", fromUserId);
+
         await client
           .from("passes")
           .upsert(
@@ -1032,6 +1184,17 @@ export const db = {
         console.warn("Supabase pass failed:", err);
       }
     }
+
+    // Always remove from LocalStorage likes in BOTH directions so it never shows as "Sent"
+    const localLikes = getLocalStore<Like[]>(LIKES_KEY, []);
+    const filteredLikes = localLikes.filter(
+      (l) =>
+        !(
+          (l.from_user === fromUserId && l.to_user === toUserId) ||
+          (l.from_user === toUserId && l.to_user === fromUserId)
+        )
+    );
+    setLocalStore(LIKES_KEY, filteredLikes);
 
     // Always record pass in LocalStorage
     const localPasses = getLocalStore<any[]>(PASSES_KEY, []);
@@ -1056,25 +1219,73 @@ export const db = {
   },
 
   async getMatches(currentUserId: string): Promise<Match[]> {
+    const localMatches = getLocalStore<Match[]>(MATCHES_KEY, []);
+    const localUserMatches = localMatches.filter(
+      (m) => m.user_a === currentUserId || m.user_b === currentUserId
+    );
+
     const client = getSupabaseClient();
     if (client) {
       try {
-        const { data, error } = await client
+        const { data: rows, error } = await client
           .from("matches")
-          .select("*, partner_a:user_a(id, first_name, photo_path, branch, year), partner_b:user_b(id, first_name, photo_path, branch, year)")
+          .select("id, user_a, user_b, status, created_at")
           .or(`user_a.eq.${currentUserId},user_b.eq.${currentUserId}`)
-          .eq("status", "active");
-        if (!error && data) {
-          return data.map((m) => {
-            const partner = m.user_a === currentUserId ? m.partner_b : m.partner_a;
-            return { ...m, partner };
-          });
+          .eq("status", "active")
+          .order("created_at", { ascending: false });
+
+        if (!error && rows && rows.length > 0) {
+          // Collect partner IDs
+          const partnerIds = Array.from(
+            new Set(rows.map((r) => (r.user_a === currentUserId ? r.user_b : r.user_a)))
+          );
+
+          // Fetch partner profiles
+          const profilesMap = new Map<string, Profile>();
+          if (partnerIds.length > 0) {
+            const { data: profs } = await client
+              .from("profiles")
+              .select("*")
+              .in("id", partnerIds);
+            if (profs) {
+              profs.forEach((p) => profilesMap.set(p.id, p as Profile));
+            }
+          }
+
+          // Build Match objects
+          const remoteMatches: Match[] = [];
+          for (const r of rows) {
+            const partnerId = r.user_a === currentUserId ? r.user_b : r.user_a;
+            let partner = profilesMap.get(partnerId);
+            if (!partner) {
+              partner = (await this.getProfileById(partnerId)) || undefined;
+            }
+            remoteMatches.push({
+              id: r.id,
+              user_a: r.user_a,
+              user_b: r.user_b,
+              status: r.status,
+              created_at: r.created_at,
+              partner,
+            });
+          }
+
+          // Merge with any local matches not yet in remote
+          const merged = [...remoteMatches];
+          for (const lm of localUserMatches) {
+            if (!merged.some((m) => (m.user_a === lm.user_a && m.user_b === lm.user_b) || m.id === lm.id)) {
+              merged.push(lm);
+            }
+          }
+
+          setLocalStore(MATCHES_KEY, merged);
+          return merged;
         }
       } catch (err) {
         console.warn("Supabase matches query failed:", err);
       }
     }
-    return getLocalStore<Match[]>(MATCHES_KEY, []);
+    return localUserMatches;
   },
 
   async getMessages(matchId: string): Promise<Message[]> {

@@ -48,6 +48,7 @@ export default function Discover() {
 
   const [loginPrompt, setLoginPrompt] = useState(false);
   const [incomingCount, setIncomingCount] = useState(0);
+  const [incomingSenderIds, setIncomingSenderIds] = useState<Set<string>>(new Set());
   const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
   const [likedUserIds, setLikedUserIds] = useState<Set<string>>(new Set());
   const [passedUserIds, setPassedUserIds] = useState<Set<string>>(new Set());
@@ -68,18 +69,19 @@ export default function Discover() {
       db.getOutgoingPassedUserIds(user.id),
     ]);
 
-    // Exclude current user and all already-matched partners
+    // Exclude current user, all already-matched partners, and all passed users
     const matchedPartnerIds = new Set(
       userMatches.map((m) => (m.user_a === user.id ? m.user_b : m.user_a))
     );
 
     const available = allProfiles.filter(
-      (p) => p.id !== user.id && !matchedPartnerIds.has(p.id)
+      (p) => p.id !== user.id && !matchedPartnerIds.has(p.id) && !outgoingPasses.has(p.id)
     );
 
     // Randomize initial order for fresh discovery on every visit
     setProfiles(shuffleArray(available));
     setIncomingCount(incoming.length);
+    setIncomingSenderIds(new Set(incoming.map((i) => i.from_user)));
     setLikedUserIds(outgoingLikes);
     setPassedUserIds(outgoingPasses);
   };
@@ -88,9 +90,14 @@ export default function Discover() {
     loadData();
 
     if (user) {
-      const unsub = db.subscribeToInterests(user.id, async () => {
+      const unsub = db.subscribeToInterests(user.id, async (data) => {
         const freshIncoming = await db.getIncomingInterests(user.id);
         setIncomingCount(freshIncoming.length);
+        setIncomingSenderIds(new Set(freshIncoming.map((i) => i.from_user)));
+        if (data?.type === "dismissed") {
+          const freshPasses = await db.getOutgoingPassedUserIds(user.id);
+          setPassedUserIds(freshPasses);
+        }
       });
       return () => {
         unsub();
@@ -137,18 +144,29 @@ export default function Discover() {
 
   const person = filteredProfiles[index % (filteredProfiles.length || 1)];
 
-  // Fast action: Interested
+  // Fast action: Interested / Match Back
   const handleQuickLike = async (target: Profile) => {
     if (!user) {
       setLoginPrompt(true);
       return;
     }
 
-    setLikedUserIds((prev) => new Set(prev).add(target.id));
+    const isMatchBack = incomingSenderIds.has(target.id);
 
-    const res = await db.likeProfile(user.id, target.id, "interested");
+    setLikedUserIds((prev) => new Set(prev).add(target.id));
+    if (isMatchBack) {
+      setIncomingSenderIds((prev) => {
+        const next = new Set(prev);
+        next.delete(target.id);
+        return next;
+      });
+    }
+
+    const res = await db.likeProfile(user.id, target.id, "interested", isMatchBack);
     if (res.matched) {
       setMatchPopup({ person: target, matchId: res.matchId || target.id });
+      // Remove from discover deck since they are now a mutual match
+      setProfiles((prev) => prev.filter((p) => p.id !== target.id));
     } else {
       setFeedbackToast(`⚡ Interested sent to ${target.first_name}!`);
       setTimeout(() => setFeedbackToast(null), 3000);
@@ -167,6 +185,18 @@ export default function Discover() {
     }
 
     setPassedUserIds((prev) => new Set(prev).add(target.id));
+    setLikedUserIds((prev) => {
+      const next = new Set(prev);
+      next.delete(target.id);
+      return next;
+    });
+    setIncomingSenderIds((prev) => {
+      const next = new Set(prev);
+      next.delete(target.id);
+      return next;
+    });
+    setProfiles((prev) => prev.filter((p) => p.id !== target.id));
+
     await db.passProfile(user.id, target.id);
 
     if (viewMode === "focus") {
@@ -177,7 +207,6 @@ export default function Discover() {
   const handleShuffle = () => {
     setProfiles((prev) => shuffleArray(prev));
     setIndex(0);
-    setPassedUserIds(new Set());
     setFeedbackToast("🔀 Shuffled! Showing new dance partners.");
     setTimeout(() => setFeedbackToast(null), 2500);
   };
@@ -187,7 +216,6 @@ export default function Discover() {
     setFilterNight("All");
     setFilterStyle("All");
     setSearchTerm("");
-    setPassedUserIds(new Set());
     setIndex(0);
   };
 
@@ -496,7 +524,8 @@ export default function Discover() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {filteredProfiles.map((dancer) => {
-                const isLiked = likedUserIds.has(dancer.id);
+                const hasIncoming = incomingSenderIds.has(dancer.id);
+                const isLiked = likedUserIds.has(dancer.id) && !hasIncoming;
                 const hasPhoto = isImageSrc(dancer.photo_path);
 
                 const matchPct = myProfile
@@ -543,11 +572,19 @@ export default function Discover() {
                           </span>
                         </div>
 
-                        <div className="absolute top-2.5 right-2.5">
-                          <Badge className="bg-[#ff8b4d]/90 text-black font-black text-[10px] shadow-md border-0">
-                            🔥 {matchPct}% match
-                          </Badge>
-                        </div>
+                        {hasIncoming ? (
+                          <div className="absolute top-2.5 right-2.5">
+                            <span className="rounded-full bg-gradient-to-r from-amber-400 to-rose-500 text-black font-black text-[10px] px-2.5 py-0.5 shadow-lg border border-amber-300/40 animate-pulse">
+                              ⚡ Interested in You!
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="absolute top-2.5 right-2.5">
+                            <Badge className="bg-[#ff8b4d]/90 text-black font-black text-[10px] shadow-md border-0">
+                              🔥 {matchPct}% match
+                            </Badge>
+                          </div>
+                        )}
 
                         <div className="absolute bottom-2 left-2.5">
                           <span className="text-[10px] font-semibold text-emerald-300 bg-black/60 backdrop-blur-md border border-emerald-500/40 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -618,12 +655,14 @@ export default function Discover() {
                           onClick={() => handleQuickLike(dancer)}
                           disabled={isLiked}
                           className={`rounded-xl px-4 py-1.5 text-xs font-black shadow-md transition flex items-center gap-1.5 active:scale-95 ${
-                            isLiked
-                              ? "bg-emerald-500/20 border border-emerald-500/40 text-emerald-300"
+                            hasIncoming
+                              ? "bg-gradient-to-r from-amber-400 to-rose-400 text-black hover:opacity-95 ring-2 ring-amber-400/50"
+                              : isLiked
+                              ? "bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 cursor-default"
                               : "bg-gradient-to-r from-[#ffd166] to-[#ff9e3b] text-black hover:opacity-95"
                           }`}
                         >
-                          <span>{isLiked ? "✓ Sent" : "⚡ Interested"}</span>
+                          <span>{hasIncoming ? "❤️ Match Back" : isLiked ? "✓ Sent" : "⚡ Interested"}</span>
                         </button>
                       </div>
                     </div>
@@ -711,16 +750,22 @@ export default function Discover() {
                   </Button>
                   <Button
                     className={`flex-1 text-base flex items-center justify-center gap-2 ${
-                      likedUserIds.has(person.id)
-                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                      incomingSenderIds.has(person.id)
+                        ? "bg-gradient-to-r from-amber-400 to-rose-400 text-black font-black ring-2 ring-amber-400/50"
+                        : likedUserIds.has(person.id)
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 cursor-default"
                         : "bg-gradient-to-r from-[#ffd166] to-[#f35ca8] text-black font-black"
                     }`}
                     onClick={() => handleQuickLike(person)}
-                    disabled={likedUserIds.has(person.id)}
+                    disabled={likedUserIds.has(person.id) && !incomingSenderIds.has(person.id)}
                   >
-                    <span>{likedUserIds.has(person.id) ? "✓" : "♥"}</span>
+                    <span>{incomingSenderIds.has(person.id) ? "❤️" : likedUserIds.has(person.id) ? "✓" : "♥"}</span>
                     <span className="text-sm font-black">
-                      {likedUserIds.has(person.id) ? "✓ Sent" : "Interested"}
+                      {incomingSenderIds.has(person.id)
+                        ? "Match Back"
+                        : likedUserIds.has(person.id)
+                        ? "✓ Sent"
+                        : "Interested"}
                     </span>
                   </Button>
                 </div>

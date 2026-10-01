@@ -70,9 +70,6 @@ export function NotificationTab({ userId }: { userId: string }) {
           fromUser: data.from_user,
         });
 
-        // Auto open the notification dropdown slightly for a preview
-        setIsOpen(true);
-
         if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
         bannerTimerRef.current = setTimeout(() => {
           setBannerAlert(null);
@@ -86,7 +83,7 @@ export function NotificationTab({ userId }: { userId: string }) {
     };
   }, [userId]);
 
-  // Click outside listener to close
+  // Click outside listener to close dropdown
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
@@ -103,7 +100,7 @@ export function NotificationTab({ userId }: { userId: string }) {
     setBannerAlert(null);
     setIsOpen(false);
 
-    const res = await db.likeProfile(userId, interest.from_user, "interested");
+    const res = await db.likeProfile(userId, interest.from_user, "interested", true);
     if (res.matchId) {
       router.push(`/chat/${res.matchId}`);
     } else {
@@ -146,9 +143,70 @@ export function NotificationTab({ userId }: { userId: string }) {
         )}
       </button>
 
-      {/* Slightly opened upside tab / dropdown card */}
+      {/* Floating subtle upside preview notification banner */}
+      {bannerAlert && (
+        <div className="fixed top-3 inset-x-3 sm:inset-x-auto sm:right-4 sm:top-4 z-50 max-w-sm w-auto mx-auto sm:mx-0 rounded-2xl bg-[#141842]/95 border border-[#ffd166]/50 p-2.5 shadow-2xl backdrop-blur-2xl animate-in fade-in slide-in-from-top-3 duration-200">
+          <div className="flex items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/10 text-base overflow-hidden border border-white/20">
+                {isImageSrc(bannerAlert.senderPhoto) ? (
+                  <img src={bannerAlert.senderPhoto!} alt="Sender" className="h-full w-full object-cover" />
+                ) : (
+                  bannerAlert.senderPhoto || "💃"
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs font-black text-white truncate">
+                  {bannerAlert.senderName}
+                </p>
+                <p className="text-[10px] text-[#ffd166] font-medium truncate">
+                  ⚡ Showed interest in you!
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  const item = interests.find((i) => i.from_user === bannerAlert.fromUser) || {
+                    id: `interest-${bannerAlert.fromUser}`,
+                    from_user: bannerAlert.fromUser,
+                    to_user: userId,
+                    kind: "interested" as const,
+                    created_at: new Date().toISOString(),
+                  };
+                  handlePass(item);
+                }}
+                className="rounded-lg bg-white/10 hover:bg-white/20 px-2 py-1 text-[10px] font-bold text-[#c5c9e8] transition"
+                title="Pass"
+              >
+                ✕ Pass
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const item = interests.find((i) => i.from_user === bannerAlert.fromUser) || {
+                    id: `interest-${bannerAlert.fromUser}`,
+                    from_user: bannerAlert.fromUser,
+                    to_user: userId,
+                    kind: "interested" as const,
+                    created_at: new Date().toISOString(),
+                  };
+                  handleMatchBack(item);
+                }}
+                className="rounded-lg bg-[#ffd166] text-black font-black px-2.5 py-1 text-[10px] hover:bg-[#ffd166]/90 transition shadow-sm"
+              >
+                ❤️ Match
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Responsive Upside Dropdown Panel (Clean on Mobile & Desktop) */}
       {isOpen && (
-        <div className="absolute right-0 top-full mt-2 w-80 sm:w-96 rounded-2xl bg-[#12163b]/95 border border-white/15 p-4 shadow-2xl backdrop-blur-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
+        <div className="fixed inset-x-3 top-16 sm:absolute sm:inset-auto sm:right-0 sm:top-full sm:mt-2 sm:w-96 max-w-sm sm:max-w-none mx-auto sm:mx-0 rounded-2xl bg-[#12163b]/98 border border-white/15 p-4 shadow-2xl backdrop-blur-2xl z-50 animate-in fade-in slide-in-from-top-2 duration-200">
           {/* Header */}
           <div className="flex items-center justify-between pb-3 border-b border-white/10">
             <div className="flex items-center gap-2">
@@ -168,48 +226,6 @@ export function NotificationTab({ userId }: { userId: string }) {
               ✕
             </button>
           </div>
-
-          {/* Real-time alert highlight inside tab */}
-          {bannerAlert && (
-            <div className="mt-3 rounded-xl bg-gradient-to-r from-amber-500/20 to-rose-500/20 border border-amber-400/40 p-2.5 flex items-center justify-between gap-2 animate-in fade-in">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/10 text-base overflow-hidden border border-white/20">
-                  {isImageSrc(bannerAlert.senderPhoto) ? (
-                    <img src={bannerAlert.senderPhoto!} alt="Sender" className="h-full w-full object-cover" />
-                  ) : (
-                    bannerAlert.senderPhoto || "💃"
-                  )}
-                </div>
-                <p className="text-xs text-amber-200 font-semibold truncate">
-                  <span className="font-black text-white">{bannerAlert.senderName}</span> just showed interest!
-                </p>
-              </div>
-              <div className="flex items-center gap-1.5 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const item = interests.find((i) => i.from_user === bannerAlert.fromUser);
-                    if (item) handlePass(item);
-                    else setBannerAlert(null);
-                  }}
-                  className="rounded-md bg-white/10 hover:bg-white/20 px-2 py-0.5 text-[10px] font-bold text-[#c5c9e8] transition"
-                  title="Pass"
-                >
-                  ✕ Pass
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const item = interests.find((i) => i.from_user === bannerAlert.fromUser);
-                    if (item) handleMatchBack(item);
-                  }}
-                  className="rounded-md bg-[#ffd166] text-black font-extrabold px-2 py-0.5 text-[10px] hover:bg-[#ffd166]/90 transition"
-                >
-                  ❤️ Match
-                </button>
-              </div>
-            </div>
-          )}
 
           {/* List of Incoming Interests */}
           <div className="mt-3 max-h-72 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
