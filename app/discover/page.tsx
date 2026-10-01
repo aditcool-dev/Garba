@@ -60,10 +60,12 @@ export default function Discover() {
       return;
     }
 
-    const [allProfiles, incoming, userMatches] = await Promise.all([
+    const [allProfiles, incoming, userMatches, outgoingLikes, outgoingPasses] = await Promise.all([
       db.getProfiles(),
       db.getIncomingInterests(user.id),
       db.getMatches(user.id),
+      db.getOutgoingLikedUserIds(user.id),
+      db.getOutgoingPassedUserIds(user.id),
     ]);
 
     // Exclude current user and all already-matched partners
@@ -78,6 +80,8 @@ export default function Discover() {
     // Randomize initial order for fresh discovery on every visit
     setProfiles(shuffleArray(available));
     setIncomingCount(incoming.length);
+    setLikedUserIds(outgoingLikes);
+    setPassedUserIds(outgoingPasses);
   };
 
   useEffect(() => {
@@ -706,11 +710,18 @@ export default function Discover() {
                     <span className="text-sm font-bold">Pass</span>
                   </Button>
                   <Button
-                    className="flex-1 text-base flex items-center justify-center gap-2 bg-gradient-to-r from-[#ffd166] to-[#f35ca8] text-black font-black"
+                    className={`flex-1 text-base flex items-center justify-center gap-2 ${
+                      likedUserIds.has(person.id)
+                        ? "bg-emerald-500/20 text-emerald-300 border border-emerald-500/40"
+                        : "bg-gradient-to-r from-[#ffd166] to-[#f35ca8] text-black font-black"
+                    }`}
                     onClick={() => handleQuickLike(person)}
+                    disabled={likedUserIds.has(person.id)}
                   >
-                    <span>♥</span>
-                    <span className="text-sm font-black">Interested</span>
+                    <span>{likedUserIds.has(person.id) ? "✓" : "♥"}</span>
+                    <span className="text-sm font-black">
+                      {likedUserIds.has(person.id) ? "✓ Sent" : "Interested"}
+                    </span>
                   </Button>
                 </div>
 

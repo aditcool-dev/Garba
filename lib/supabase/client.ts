@@ -630,6 +630,7 @@ export const db = {
   ) {
     if (typeof window === "undefined") return;
     const payload = {
+      type: "incoming",
       from_user: fromUserId,
       to_user: toUserId,
       matched,
@@ -674,9 +675,51 @@ export const db = {
     }
   },
 
+  broadcastInterestDismissed(currentUserId: string, targetUserId: string) {
+    if (typeof window === "undefined") return;
+    const payload = {
+      type: "dismissed",
+      current_user: currentUserId,
+      target_user: targetUserId,
+      timestamp: Date.now(),
+    };
+
+    try {
+      const bc = new BroadcastChannel("garbamate_interests");
+      bc.postMessage(payload);
+      setTimeout(() => bc.close(), 100);
+    } catch (err) {
+      void err;
+    }
+
+    try {
+      localStorage.setItem("garbamate_interest_dismiss_event", JSON.stringify(payload));
+    } catch (err) {
+      void err;
+    }
+
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const ch = client.channel(`interest_alerts:${currentUserId}`);
+        ch.subscribe((status) => {
+          if (status === "SUBSCRIBED") {
+            ch.send({
+              type: "broadcast",
+              event: "interest_dismissed",
+              payload,
+            });
+          }
+        });
+      } catch (err) {
+        void err;
+      }
+    }
+  },
+
   subscribeToInterests(
     userId: string,
-    onInterest: (data: { from_user: string; to_user: string; matched: boolean; matchId?: string; sender_profile?: Profile }) => void
+    onInterest: (data: { from_user?: string; to_user?: string; matched?: boolean; matchId?: string; sender_profile?: Profile; type?: string }) => void
   ) {
     if (typeof window === "undefined") return () => {};
 
@@ -684,8 +727,9 @@ export const db = {
     try {
       bc = new BroadcastChannel("garbamate_interests");
       bc.onmessage = (e) => {
-        if (e.data && e.data.to_user === userId) {
-          if (e.data.sender_profile) {
+        if (!e.data) return;
+        if (e.data.to_user === userId || e.data.current_user === userId) {
+          if (e.data.sender_profile && e.data.to_user === userId) {
             this.cacheIncomingInterest(userId, e.data);
           }
           onInterest(e.data);
@@ -696,11 +740,14 @@ export const db = {
     }
 
     const storageHandler = (e: StorageEvent) => {
-      if (e.key === "garbamate_interest_event" && e.newValue) {
+      if (
+        (e.key === "garbamate_interest_event" || e.key === "garbamate_interest_dismiss_event") &&
+        e.newValue
+      ) {
         try {
           const data = JSON.parse(e.newValue);
-          if (data && data.to_user === userId) {
-            if (data.sender_profile) {
+          if (data && (data.to_user === userId || data.current_user === userId)) {
+            if (data.sender_profile && data.to_user === userId) {
               this.cacheIncomingInterest(userId, data);
             }
             onInterest(data);
@@ -726,6 +773,11 @@ export const db = {
               onInterest(payload.payload);
             }
           })
+          .on("broadcast", { event: "interest_dismissed" }, (payload) => {
+            if (payload?.payload && payload.payload.current_user === userId) {
+              onInterest(payload.payload);
+            }
+          })
           .subscribe();
       } catch (err) {
         void err;
@@ -741,8 +793,66 @@ export const db = {
     };
   },
 
+  async getOutgoingLikedUserIds(userId: string): Promise<Set<string>> {
+    const result = new Set<string>();
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from("likes")
+          .select("to_user")
+          .eq("from_user", userId);
+        if (!error && data) {
+          data.forEach((r: any) => {
+            if (r.to_user) result.add(r.to_user);
+          });
+        }
+      } catch (err) {
+        console.warn("Supabase getOutgoingLikedUserIds error:", err);
+      }
+    }
+    const localLikes = getLocalStore<Like[]>(LIKES_KEY, []);
+    localLikes.forEach((l) => {
+      if (l.from_user === userId && l.to_user) {
+        result.add(l.to_user);
+      }
+    });
+    return result;
+  },
+
+  async getOutgoingPassedUserIds(userId: string): Promise<Set<string>> {
+    const result = new Set<string>();
+    const client = getSupabaseClient();
+    if (client) {
+      try {
+        const { data, error } = await client
+          .from("passes")
+          .select("to_user")
+          .eq("from_user", userId);
+        if (!error && data) {
+          data.forEach((r: any) => {
+            if (r.to_user) result.add(r.to_user);
+          });
+        }
+      } catch (err) {
+        console.warn("Supabase getOutgoingPassedUserIds error:", err);
+      }
+    }
+    const localPasses = getLocalStore<any[]>(PASSES_KEY, []);
+    localPasses.forEach((p) => {
+      if (p.from_user === userId && p.to_user) {
+        result.add(p.to_user);
+      }
+    });
+    return result;
+  },
+
   async getIncomingInterests(currentUserId: string): Promise<IncomingInterest[]> {
-    const matches = await this.getMatches(currentUserId);
+    const [matches, passedUserIds] = await Promise.all([
+      this.getMatches(currentUserId),
+      this.getOutgoingPassedUserIds(currentUserId),
+    ]);
+
     const matchedPartnerIds = new Set(
       matches.map((m) => (m.user_a === currentUserId ? m.user_b : m.user_a))
     );
@@ -754,7 +864,10 @@ export const db = {
       try {
         const { data: rpcData, error: rpcError } = await client.rpc("get_incoming_interests");
         if (!rpcError && rpcData && Array.isArray(rpcData) && rpcData.length > 0) {
-          return rpcData.map((row: any) => ({
+          const filteredRpc = rpcData.filter(
+            (row: any) => !passedUserIds.has(row.from_user) && !matchedPartnerIds.has(row.from_user)
+          );
+          return filteredRpc.map((row: any) => ({
             id: row.id,
             from_user: row.from_user,
             to_user: row.to_user,
@@ -803,7 +916,11 @@ export const db = {
 
         if (!error && likesData) {
           likesData.forEach((l: any) => {
-            if (l.from_user !== currentUserId && !matchedPartnerIds.has(l.from_user)) {
+            if (
+              l.from_user !== currentUserId &&
+              !matchedPartnerIds.has(l.from_user) &&
+              !passedUserIds.has(l.from_user)
+            ) {
               likesMap.set(l.from_user, {
                 id: l.id,
                 from_user: l.from_user,
@@ -819,26 +936,33 @@ export const db = {
       }
     }
 
-    // 3. Also merge from local cached real-time incoming interests
-    const cached = getLocalStore<any[]>(`garbamate_cached_incoming_${currentUserId}`, []);
-    cached.forEach((c) => {
-      if (
+    // 3. Clean and merge local cached real-time incoming interests
+    const cachedKey = `garbamate_cached_incoming_${currentUserId}`;
+    const cached = getLocalStore<any[]>(cachedKey, []);
+    const validCached = cached.filter(
+      (c) =>
         c.to_user === currentUserId &&
         c.from_user !== currentUserId &&
         !matchedPartnerIds.has(c.from_user) &&
-        !likesMap.has(c.from_user)
-      ) {
+        !passedUserIds.has(c.from_user)
+    );
+    if (validCached.length !== cached.length) {
+      setLocalStore(cachedKey, validCached);
+    }
+    validCached.forEach((c) => {
+      if (!likesMap.has(c.from_user)) {
         likesMap.set(c.from_user, c);
       }
     });
 
-    // 4. Also merge from LocalStorage likes
+    // 4. Clean and merge LocalStorage likes
     const allLikes = getLocalStore<Like[]>(LIKES_KEY, []);
     allLikes.forEach((l) => {
       if (
         l.to_user === currentUserId &&
         l.from_user !== currentUserId &&
         !matchedPartnerIds.has(l.from_user) &&
+        !passedUserIds.has(l.from_user) &&
         !likesMap.has(l.from_user)
       ) {
         likesMap.set(l.from_user, {
@@ -856,6 +980,9 @@ export const db = {
     const likesList = Array.from(likesMap.values());
 
     for (const item of likesList) {
+      if (passedUserIds.has(item.from_user) || matchedPartnerIds.has(item.from_user)) {
+        continue;
+      }
       let sender = item.sender_profile || (await this.getProfileById(item.from_user));
       if (!sender) {
         sender = {
@@ -895,12 +1022,37 @@ export const db = {
     const client = getSupabaseClient();
     if (client) {
       try {
-        await client.from("passes").upsert({ from_user: fromUserId, to_user: toUserId });
-        return;
+        await client
+          .from("passes")
+          .upsert(
+            { from_user: fromUserId, to_user: toUserId },
+            { onConflict: "from_user,to_user" }
+          );
       } catch (err) {
         console.warn("Supabase pass failed:", err);
       }
     }
+
+    // Always record pass in LocalStorage
+    const localPasses = getLocalStore<any[]>(PASSES_KEY, []);
+    if (!localPasses.some((p) => p.from_user === fromUserId && p.to_user === toUserId)) {
+      localPasses.push({
+        id: `pass-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        from_user: fromUserId,
+        to_user: toUserId,
+        created_at: new Date().toISOString(),
+      });
+      setLocalStore(PASSES_KEY, localPasses);
+    }
+
+    // Purge from cached incoming interests for fromUserId
+    const cachedKey = `garbamate_cached_incoming_${fromUserId}`;
+    const cached = getLocalStore<any[]>(cachedKey, []);
+    const filteredCached = cached.filter((item) => item.from_user !== toUserId);
+    setLocalStore(cachedKey, filteredCached);
+
+    // Broadcast dismissal so notification tab, discover banner, and matches page update immediately
+    this.broadcastInterestDismissed(fromUserId, toUserId);
   },
 
   async getMatches(currentUserId: string): Promise<Match[]> {

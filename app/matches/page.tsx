@@ -23,7 +23,7 @@ function isImageSrc(src?: string | null): boolean {
 
 function MatchesContent() {
   const searchParams = useSearchParams();
-  const initialTab = searchParams.get("tab") === "interests" ? "interests" : "matches";
+  const initialTab = searchParams?.get("tab") === "interests" ? "interests" : "matches";
 
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"matches" | "interests">(initialTab);
@@ -34,7 +34,7 @@ function MatchesContent() {
 
   // Sync tab with URL if changed
   useEffect(() => {
-    if (searchParams.get("tab") === "interests") {
+    if (searchParams?.get("tab") === "interests") {
       setActiveTab("interests");
     }
   }, [searchParams]);
@@ -91,8 +91,11 @@ function MatchesContent() {
 
   const handlePassInterest = async (interest: IncomingInterest) => {
     if (!user) return;
+    setInterests((prev) => prev.filter((i) => i.from_user !== interest.from_user));
     await db.passProfile(user.id, interest.from_user);
-    setInterests((prev) => prev.filter((i) => i.id !== interest.id));
+    const partnerName = interest.sender_profile?.first_name || "Dancer";
+    setActionNotice(`Passed on ${partnerName}. Request dismissed.`);
+    setTimeout(() => setActionNotice(null), 3500);
   };
 
   if (!user) {

@@ -50,25 +50,34 @@ export function NotificationTab({ userId }: { userId: string }) {
       const fresh = await db.getIncomingInterests(userId);
       setInterests(fresh);
 
-      // Extract sender details from payload or fresh list
-      const sender = (data as any)?.sender_profile || fresh.find((i) => i.from_user === data.from_user)?.sender_profile;
-      const senderName = sender?.first_name || "A dancer";
-      const senderPhoto = sender?.photo_path || null;
+      if (data?.type === "dismissed") {
+        if (bannerAlert && (bannerAlert.fromUser === (data as any).target_user || bannerAlert.fromUser === data.from_user)) {
+          setBannerAlert(null);
+        }
+        return;
+      }
 
-      // Show the subtle upside tab near profile
-      setBannerAlert({
-        senderName,
-        senderPhoto,
-        fromUser: data.from_user,
-      });
+      if (data?.from_user) {
+        // Extract sender details from payload or fresh list
+        const sender = (data as any)?.sender_profile || fresh.find((i) => i.from_user === data.from_user)?.sender_profile;
+        const senderName = sender?.first_name || "A dancer";
+        const senderPhoto = sender?.photo_path || null;
 
-      // Auto open the notification dropdown slightly for a preview
-      setIsOpen(true);
+        // Show the subtle upside tab near profile
+        setBannerAlert({
+          senderName,
+          senderPhoto,
+          fromUser: data.from_user,
+        });
 
-      if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
-      bannerTimerRef.current = setTimeout(() => {
-        setBannerAlert(null);
-      }, 7000);
+        // Auto open the notification dropdown slightly for a preview
+        setIsOpen(true);
+
+        if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
+        bannerTimerRef.current = setTimeout(() => {
+          setBannerAlert(null);
+        }, 7000);
+      }
     });
 
     return () => {
@@ -89,16 +98,26 @@ export function NotificationTab({ userId }: { userId: string }) {
   }, []);
 
   const handleMatchBack = async (interest: IncomingInterest) => {
-    const res = await db.likeProfile(userId, interest.from_user, "interested");
-    const fresh = await db.getIncomingInterests(userId);
-    setInterests(fresh);
+    // Optimistically remove from notifications
+    setInterests((prev) => prev.filter((i) => i.from_user !== interest.from_user));
     setBannerAlert(null);
     setIsOpen(false);
+
+    const res = await db.likeProfile(userId, interest.from_user, "interested");
     if (res.matchId) {
       router.push(`/chat/${res.matchId}`);
     } else {
       router.push("/matches");
     }
+  };
+
+  const handlePass = async (interest: IncomingInterest) => {
+    // Optimistically remove from notifications immediately
+    setInterests((prev) => prev.filter((i) => i.from_user !== interest.from_user));
+    if (bannerAlert?.fromUser === interest.from_user) {
+      setBannerAlert(null);
+    }
+    await db.passProfile(userId, interest.from_user);
   };
 
   const count = interests.length;
@@ -165,9 +184,30 @@ export function NotificationTab({ userId }: { userId: string }) {
                   <span className="font-black text-white">{bannerAlert.senderName}</span> just showed interest!
                 </p>
               </div>
-              <span className="text-[10px] text-amber-300 font-bold shrink-0 bg-amber-400/20 px-2 py-0.5 rounded-md">
-                Just now
-              </span>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const item = interests.find((i) => i.from_user === bannerAlert.fromUser);
+                    if (item) handlePass(item);
+                    else setBannerAlert(null);
+                  }}
+                  className="rounded-md bg-white/10 hover:bg-white/20 px-2 py-0.5 text-[10px] font-bold text-[#c5c9e8] transition"
+                  title="Pass"
+                >
+                  ✕ Pass
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const item = interests.find((i) => i.from_user === bannerAlert.fromUser);
+                    if (item) handleMatchBack(item);
+                  }}
+                  className="rounded-md bg-[#ffd166] text-black font-extrabold px-2 py-0.5 text-[10px] hover:bg-[#ffd166]/90 transition"
+                >
+                  ❤️ Match
+                </button>
+              </div>
             </div>
           )}
 
@@ -201,6 +241,14 @@ export function NotificationTab({ userId }: { userId: string }) {
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => handlePass(item)}
+                        className="rounded-lg bg-white/10 hover:bg-white/20 px-2 py-1 text-[11px] font-bold text-[#aab0d0] hover:text-white transition"
+                        title="Pass / Dismiss"
+                      >
+                        ✕ Pass
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleMatchBack(item)}
