@@ -44,7 +44,7 @@ export function NightStrip({
   return (
     <div className={cn("min-w-0", className)}>
       {showLabel && <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">{label}</p>}
-      <div className="custom-scrollbar flex min-w-0 gap-1.5 overflow-x-auto pb-1" role={onNightClick ? undefined : "list"}>
+      <div className="grid min-w-0 grid-cols-9 gap-1" role={onNightClick ? undefined : "list"}>
         {options.map((night) => {
           const value = String(night);
           const key = normaliseNight(night);
@@ -52,13 +52,13 @@ export function NightStrip({
           const isHighlighted = highlighted.has(key);
           const isActive = active === key;
           const itemClass = cn(
-            "inline-flex min-h-12 min-w-12 shrink-0 flex-col items-center justify-center rounded-2xl border px-2 text-[10px] font-bold transition",
+            "inline-flex min-h-9 min-w-0 flex-col items-center justify-center rounded-lg border px-0 text-[10px] font-bold transition",
             isSelected
               ? "border-[#ff8b4d]/60 bg-[#ff8b4d]/15 text-[#ffdca0]"
               : "border-white/10 bg-white/[0.045] text-[#aaa8d0]",
             isHighlighted && "ring-1 ring-[#2dd4bf]/70 ring-offset-1 ring-offset-[#0a0820]",
             isActive && "border-[#ffd166] bg-[#ffd166]/15 text-[#ffd166]",
-            compact && "min-w-11 rounded-xl text-[9px]",
+            compact && "min-h-8 text-[9px]",
             onNightClick && "hover:-translate-y-0.5 hover:border-[#ffd166]/60",
           );
           const content = (

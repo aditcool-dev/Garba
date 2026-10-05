@@ -1,11 +1,12 @@
 "use client";
 
-import { motion } from "framer-motion";
+import { memo } from "react";
+import Image from "next/image";
 import { AvatarFallback, Badge, NightStrip, ScoreRing, VerifiedBadge } from "@/components/ui";
 import type { Profile } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 
-function isImageSrc(src?: string | null): boolean {
+export function isImageSrc(src?: string | null): boolean {
   if (!src) return false;
   const value = src.trim();
   return value.startsWith("http://") || value.startsWith("https://") || value.startsWith("data:") || value.startsWith("/") || value.startsWith("blob:");
@@ -22,18 +23,17 @@ const avatarGradients = [
   "from-[#ffc83d] via-[#ff8a00] to-[#24143f]",
 ];
 
-export function IllustratedProfileVisual({ person, className }: { person: Profile; className?: string }) {
+export function IllustratedProfileVisual({ person, className, priority = false }: { person: Profile; className?: string; priority?: boolean }) {
   const gradient = avatarGradients[person.first_name.length % avatarGradients.length];
   return (
     <div className={cn("relative h-full w-full overflow-hidden bg-[#16123a]", className)}>
       {isImageSrc(person.photo_path) ? (
-        <img src={person.photo_path!} alt={`${person.first_name}'s profile`} className="h-full w-full object-cover object-center" loading="eager" decoding="async" />
+        <Image src={person.photo_path!} alt={`${person.first_name}'s profile`} fill sizes="(max-width: 768px) 100vw, 460px" unoptimized priority={priority} decoding="async" className="object-cover object-center" />
       ) : (
         <div className={cn("relative flex h-full w-full items-center justify-center bg-gradient-to-br", gradient)}>
           <div className="absolute inset-0 opacity-35" style={{ backgroundImage: "radial-gradient(circle at 24% 20%, rgba(255,255,255,.4) 0 1px, transparent 2px), radial-gradient(circle at 78% 70%, rgba(255,255,255,.3) 0 1px, transparent 2px)", backgroundSize: "26px 26px, 34px 34px" }} />
           <div className="absolute h-[70%] w-[70%] rounded-full border border-white/25 shadow-[0_0_80px_rgba(255,255,255,.12)]" />
-          <span className="display-font relative text-8xl font-bold tracking-[-0.08em] text-white drop-shadow-[0_12px_28px_rgba(0,0,0,.32)] sm:text-9xl">{initials(person.first_name)}</span>
-          <span className="absolute bottom-5 rounded-full border border-white/20 bg-black/20 px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] text-white/75 backdrop-blur-md">Illustrated avatar</span>
+           <span aria-hidden="true" className="display-font absolute top-[12%] text-8xl font-bold tracking-[-0.08em] text-white/35 sm:text-9xl">{initials(person.first_name)}</span>
         </div>
       )}
     </div>
@@ -49,29 +49,29 @@ export type DiscoverProfileCardProps = {
   onPass?: () => void;
   onInterested?: () => void;
   isMatched?: boolean;
+  priority?: boolean;
 };
 
-export function DiscoverProfileCard({ person, score, myNights, className, onOpenDetails, onPass, onInterested, isMatched }: DiscoverProfileCardProps) {
+export const DiscoverProfileCard = memo(function DiscoverProfileCard({ person, score, myNights, className, onOpenDetails, onPass, onInterested, isMatched, priority }: DiscoverProfileCardProps) {
   const overlap = person.available_nights.filter((night) => myNights.includes(night));
   const visibleStyles = person.styles.slice(0, 3);
   const extraStyles = Math.max(0, person.styles.length - visibleStyles.length);
 
   return (
-    <motion.article
-      layout
+    <article
       className={cn("relative isolate overflow-hidden rounded-[28px] border border-white/12 bg-[#16123a] shadow-[0_28px_75px_rgba(0,0,0,.4)]", className)}
       aria-label={`${person.first_name}'s Garba profile`}
       onClick={onOpenDetails}
     >
       <div className="absolute inset-0">
-        <IllustratedProfileVisual person={person} />
+        <IllustratedProfileVisual person={person} priority={priority} />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0820] via-[#0a0820]/40 to-transparent" aria-hidden="true" />
         <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-[#ff2e93]/10" aria-hidden="true" />
       </div>
 
       <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4 sm:p-5">
-        <VerifiedBadge className="rounded-full border border-[#2de2c4]/25 bg-[#071c22]/65 px-2.5 py-1 text-[10px] backdrop-blur-md" />
-        <div className="rounded-full border border-white/15 bg-[#0a0820]/55 p-1 backdrop-blur-md" title="A fun app-generated score based on nights, styles, and interests.">
+        <VerifiedBadge className="rounded-full border border-[#2de2c4]/25 bg-[#071c22] px-2.5 py-1 text-[10px]" />
+        <div className="rounded-full border border-white/15 bg-[#0a0820] p-1" title="A fun app-generated score based on nights, styles, and interests.">
           <ScoreRing score={score} size="sm" label="Garba compatibility" />
         </div>
       </div>
@@ -104,8 +104,8 @@ export function DiscoverProfileCard({ person, score, myNights, className, onOpen
           <button type="button" onClick={(event) => { event.stopPropagation(); onInterested?.(); }}>Interested in {person.first_name}</button>
         </div>
       </div>
-    </motion.article>
+    </article>
   );
-}
+});
 
 export { AvatarFallback };
