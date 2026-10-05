@@ -23,7 +23,7 @@ const SAMPLE_CARDS: SampleCard[] = [
     vibe: "Fast garba",
     emoji: "💃",
     className: "from-[#542353] to-[#24164a]",
-    transform: "translate(-42%, 18px) rotate(-13deg) scale(.9)",
+    transform: "translate(-12%, 5%) rotate(-6deg)",
   },
   {
     name: "Rohan",
@@ -31,7 +31,7 @@ const SAMPLE_CARDS: SampleCard[] = [
     vibe: "3-taali energy",
     emoji: "🕺",
     className: "from-[#293d68] to-[#17173e]",
-    transform: "translate(42%, 18px) rotate(13deg) scale(.9)",
+    transform: "translate(12%, 5%) rotate(6deg)",
   },
   {
     name: "Aisha",
@@ -39,7 +39,7 @@ const SAMPLE_CARDS: SampleCard[] = [
     vibe: "Bollywood garba",
     emoji: "🥻",
     className: "from-[#6c2c59] via-[#30235b] to-[#161436]",
-    transform: "translateY(-2px) rotate(0deg)",
+    transform: "rotate(0deg)",
   },
 ];
 
@@ -115,7 +115,7 @@ export default function Home() {
           )}
         </header>
 
-        <section className="grid items-center gap-8 py-7 sm:py-10 lg:grid-cols-[.95fr_1.05fr] lg:gap-12 lg:py-14">
+        <section className="landing-hero grid min-w-0 items-center gap-8 py-7 sm:py-10 lg:grid-cols-[.95fr_1.05fr] lg:gap-12 lg:py-14">
           <div className="order-2 lg:order-1">
             <div className="inline-flex items-center gap-2 rounded-full border border-[#ffd166]/20 bg-[#211952]/65 px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffdca0]">
               <span className="h-1.5 w-1.5 rounded-full bg-[#2dd4bf] shadow-[0_0_12px_rgba(45,212,191,.8)]" />
@@ -148,34 +148,34 @@ export default function Home() {
             </div>
           </div>
 
-          <div className="order-1 relative mx-auto h-[330px] w-full max-w-[430px] sm:h-[360px] lg:order-2">
+          <div className="hero-stack order-1 lg:order-2">
             <div className="absolute inset-x-8 top-8 h-56 rounded-full bg-[#e8459b]/20 blur-3xl" aria-hidden="true" />
             <div className="absolute inset-x-10 bottom-2 h-16 rounded-full bg-[#ffd166]/10 blur-2xl" aria-hidden="true" />
 
             {SAMPLE_CARDS.map((card, index) => (
               <article
                 key={card.name}
-                className={`absolute left-1/2 top-4 h-[278px] w-[min(74vw,250px)] -translate-x-1/2 overflow-hidden rounded-[28px] border border-white/15 bg-gradient-to-br ${card.className} p-4 shadow-[0_24px_55px_rgba(0,0,0,.35)] transition-transform duration-300 ${index === 2 ? "z-20" : "z-10"}`}
+                className={`hero-sample-card overflow-hidden border border-white/15 bg-gradient-to-br ${card.className} shadow-[0_24px_55px_rgba(0,0,0,.35)] ${index === 2 ? "z-20" : "z-10"}`}
                 style={{ transform: `translateX(-50%) ${card.transform}` }}
               >
-                <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-[0.15em] text-white/65">
+                <div className="hero-card-eyebrow flex items-center justify-between font-bold uppercase tracking-[0.15em] text-white/65">
                   <span>GarbaMate</span>
                   <span>{index === 2 ? "98% vibe" : "New"}</span>
                 </div>
-                <div className="mt-4 flex h-36 items-center justify-center rounded-[22px] border border-white/10 bg-black/10 text-7xl shadow-inner">
+                <div className="hero-card-visual flex items-center justify-center border border-white/10 bg-black/10 shadow-inner">
                   <span aria-hidden="true">{card.emoji}</span>
                 </div>
-                <div className="mt-4 flex items-end justify-between gap-2">
+                <div className="hero-card-meta flex items-end justify-between gap-2">
                   <div>
-                    <h2 className="display-font text-xl font-bold text-white">{card.name}</h2>
-                    <p className="mt-1 text-[11px] text-white/70">{card.meta}</p>
+                    <h2 className="display-font font-bold text-white">{card.name}</h2>
+                    <p className="mt-1 text-white/70">{card.meta}</p>
                   </div>
-                  <span className="rounded-full bg-white/10 px-2 py-1 text-[10px] font-bold text-[#ffdca0]">{card.vibe}</span>
+                  <span className="hero-card-vibe rounded-full bg-white/10 font-bold text-[#ffdca0]">{card.vibe}</span>
                 </div>
               </article>
             ))}
 
-            <div className="absolute bottom-0 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-[#100a2c]/90 px-3.5 py-2 text-[10px] font-bold text-[#cbc9e8] shadow-xl backdrop-blur-xl">
+            <div className="hero-stack-caption absolute bottom-0 left-1/2 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/10 bg-[#100a2c]/90 px-3.5 py-2 text-[10px] font-bold text-[#cbc9e8] shadow-xl">
               <span className="text-[#ffd166]">●</span> A little preview of your people
             </div>
           </div>

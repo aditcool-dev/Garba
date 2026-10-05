@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { db } from "@/lib/supabase/client";
 import type { IncomingInterest, Profile } from "@/lib/supabase/types";
+import { useRelationships } from "@/lib/relationships-context";
 
 function isImageSrc(src?: string | null): boolean {
   if (!src) return false;
@@ -19,6 +20,7 @@ function isImageSrc(src?: string | null): boolean {
 }
 
 export function NotificationTab({ userId }: { userId: string }) {
+  const { revision } = useRelationships();
   const router = useRouter();
   const [interests, setInterests] = useState<IncomingInterest[]>([]);
   const [isOpen, setIsOpen] = useState(false);
@@ -81,7 +83,7 @@ export function NotificationTab({ userId }: { userId: string }) {
       unsub();
       if (bannerTimerRef.current) clearTimeout(bannerTimerRef.current);
     };
-  }, [userId]);
+  }, [userId,revision]);
 
   // Click outside listener to close dropdown
   useEffect(() => {

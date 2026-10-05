@@ -22,6 +22,7 @@ export interface Profile {
   is_banned: boolean;
   onboarding_complete: boolean;
   is_demo: boolean;
+  has_seen_discover_tutorial?: boolean;
   last_active_at?: string;
   created_at: string;
   updated_at: string;
@@ -50,6 +51,9 @@ export interface Match {
   user_b: string;
   status: "active" | "unmatched";
   created_at: string;
+  chat_started_at?: string;
+  unmatched_at?: string | null;
+  unmatched_by?: string | null;
   partner?: Profile;
 }
 

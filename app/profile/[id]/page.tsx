@@ -10,6 +10,8 @@ import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
 import { uploadAvatar } from "@/lib/supabase/storage";
 import type { Profile, ReportReason } from "@/lib/supabase/types";
+import { useRelationships } from "@/lib/relationships-context";
+import { MatchActions } from "@/components/match-actions";
 
 function isImageSrc(src?: string | null): boolean {
   if (!src) return false;
@@ -21,6 +23,8 @@ export default function ProfilePage() {
   const params = useParams();
   const targetId = (params?.id as string) || "me";
   const { user, profile: myProfile, refreshProfile } = useAuth();
+  const { matches, refetch: refetchMatches } = useRelationships();
+  const activeMatch=matches.find((match)=>match.user_a===targetId||match.user_b===targetId);
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
@@ -78,6 +82,7 @@ export default function ProfilePage() {
   const handleSendLike = async () => {
     if (!user || !profile) return;
     const res = await db.likeProfile(user.id, profile.id);
+    await refetchMatches();
     if (res.matched) {
       setActionSuccess("🎉 It's a match! Check your matches page to chat.");
     } else {
@@ -162,7 +167,7 @@ export default function ProfilePage() {
 
             <div className="grid gap-5 sm:grid-cols-2"><div><h2 className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Garba styles</h2><div className="mt-2 flex flex-wrap gap-1.5">{(currentProfile?.styles || []).map((style) => <Badge key={style} className="bg-[#f35ca8]/10 text-[#ffb5dc]">{style}</Badge>)}</div></div><div><h2 className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Interests</h2><div className="mt-2 flex flex-wrap gap-1.5">{(currentProfile?.interests || []).map((interest) => <Badge key={interest} className="bg-white/[0.04] text-[#aaa8d0]">#{interest}</Badge>)}</div></div></div>
 
-            <div className="flex flex-col gap-2 border-t border-white/10 pt-5 sm:flex-row">{!isOwnProfile ? <><Button onClick={handleSendLike} className="flex-1">♥ Send Garba interest</Button><Link href={`/chat/${currentProfile?.id}`} className="flex-1"><Button variant="secondary" className="w-full">💬 Open chat</Button></Link></> : <Link href="/settings" className="flex-1"><Button variant="secondary" className="w-full">Account & privacy settings</Button></Link>}</div>
+            <div className="flex flex-col gap-2 border-t border-white/10 pt-5 sm:flex-row">{!isOwnProfile ? <>{activeMatch?<><Link href={`/chat/${activeMatch.id}`} className="flex-1"><Button className="w-full">Matched · Open chat</Button></Link><MatchActions match={activeMatch} name={profileName} profileId={targetId} visible /></>:<><Button onClick={handleSendLike} className="flex-1">♥ Send Garba interest</Button><MatchActions name={profileName} profileId={targetId} /></>}</> : <Link href="/settings" className="flex-1"><Button variant="secondary" className="w-full">Account & privacy settings</Button></Link>}</div>
             {!isOwnProfile && <p className="text-center text-[10px] text-[#73789e]">Only send interest if you&apos;d be comfortable meeting in the public festival space.</p>}
           </div>
         </Card>
