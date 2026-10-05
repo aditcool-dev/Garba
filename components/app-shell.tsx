@@ -1,73 +1,11 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Nav } from "./nav";
 import { NotificationTab } from "./notification-tab";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { Button } from "./ui";
 import { AvatarFallback } from "./avatar-fallback";
-import { FESTIVAL } from "@/config/festival";
-
-type FestivalState =
-  | { status: "countdown"; days: number; hours: number; minutes: number }
-  | { status: "live" }
-  | { status: "ended" };
-
-function getFestivalState(): FestivalState {
-  const target = Date.parse(FESTIVAL.startDate);
-  const remaining = target - Date.now();
-
-  if (!Number.isFinite(target) || Date.now() >= target + FESTIVAL.nights * 24 * 60 * 60 * 1000) {
-    return { status: "ended" };
-  }
-
-  if (remaining <= 0) {
-    return { status: "live" };
-  }
-
-  const totalMinutes = Math.floor(remaining / 60000);
-  return {
-    status: "countdown",
-    days: Math.floor(totalMinutes / (60 * 24)),
-    hours: Math.floor((totalMinutes % (60 * 24)) / 60),
-    minutes: totalMinutes % 60,
-  };
-}
-
-function CountdownPill() {
-  const [festivalState, setFestivalState] = useState<FestivalState | null>(null);
-
-  useEffect(() => {
-    const update = () => setFestivalState(getFestivalState());
-    update();
-
-    const timer = window.setInterval(update, 60000);
-    return () => window.clearInterval(timer);
-  }, []);
-
-  const label =
-    festivalState?.status === "countdown"
-      ? `${FESTIVAL.name} in ${festivalState.days}d ${String(festivalState.hours).padStart(2, "0")}h ${String(festivalState.minutes).padStart(2, "0")}m`
-      : festivalState?.status === "live"
-        ? `${FESTIVAL.name} is live`
-        : festivalState?.status === "ended"
-          ? `${FESTIVAL.name} · See you next time`
-        : `${FESTIVAL.name} · ${FESTIVAL.nights} nights`;
-
-  return (
-    <div
-      className="inline-flex min-h-9 items-center gap-2 rounded-full border border-[#ffd166]/20 bg-[#211952]/70 px-3.5 text-[11px] font-bold text-[#ffdca0] shadow-[0_8px_24px_rgba(0,0,0,0.15)]"
-      role="status"
-      aria-live="polite"
-      title={`${FESTIVAL.name} starts ${FESTIVAL.startDate}`}
-    >
-      <span className="text-sm" aria-hidden="true">✦</span>
-      <span className="sm:hidden">{festivalState?.status === "countdown" ? `${festivalState.days}d to go` : label}</span>
-      <span className="hidden sm:inline">{label}</span>
-    </div>
-  );
-}
 
 export function AppShell({
   children,
@@ -99,7 +37,6 @@ export function AppShell({
           </div>
 
           <div className="flex min-w-0 items-center gap-1 sm:gap-2">
-            <CountdownPill />
             {user ? (
               <div className="flex items-center gap-1 sm:gap-2">
                 <div className="shell-notifications"><NotificationTab userId={user.id} /></div>

@@ -89,3 +89,19 @@ export interface AuditLog {
   target_id?: string | null;
   created_at: string;
 }
+
+export type NotificationType = "interest" | "match" | "message";
+
+export interface NotificationItem {
+  id: string;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  sender_id?: string;
+  sender_name?: string;
+  sender_photo?: string | null;
+  match_id?: string;
+  created_at: string;
+  read: boolean;
+}
