@@ -4,7 +4,8 @@ export function isAllowedEmail(email: string, configured = process.env.ALLOWED_E
   const at = normalized.lastIndexOf("@");
   if (at < 1 || at === normalized.length - 1) return false;
   const domain = normalized.slice(at + 1);
-  return configured.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean).includes(domain) || domain === "bmsce.ac.in";
+  if (domain === "bmsce.ac.in" || domain === "gmail.com" || domain === "googlemail.com") return true;
+  return configured.split(",").map((d) => d.trim().toLowerCase()).filter(Boolean).includes(domain);
 }
 
 export function parseCollegeEmail(email: string) {
