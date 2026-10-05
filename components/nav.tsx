@@ -6,10 +6,12 @@ import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
 import { cn } from "@/lib/utils";
+import { useRelationships } from "@/lib/relationships-context";
 
 export function Nav() {
   const path = usePathname() || "";
   const { user } = useAuth();
+  const { revision } = useRelationships();
   const [interestCount, setInterestCount] = useState(0);
 
   useEffect(() => {
@@ -33,7 +35,7 @@ export function Nav() {
     return () => {
       unsub();
     };
-  }, [user, path]);
+  }, [user, path,revision]);
 
   const links = [
     { icon: "⌂", label: "Discover", href: "/discover", badge: 0 },

@@ -5,6 +5,7 @@ import Image from "next/image";
 import { AvatarFallback, Badge, NightStrip, ScoreRing, VerifiedBadge } from "@/components/ui";
 import type { Profile } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
+import { optimizableImage, PROFILE_SIZES } from "@/lib/profile-images";
 
 export function isImageSrc(src?: string | null): boolean {
   if (!src) return false;
@@ -28,11 +29,9 @@ export function IllustratedProfileVisual({ person, className, priority = false }
   return (
     <div className={cn("relative h-full w-full overflow-hidden bg-[#16123a]", className)}>
       {isImageSrc(person.photo_path) ? (
-        <Image src={person.photo_path!} alt={`${person.first_name}'s profile`} fill sizes="(max-width: 768px) 100vw, 460px" unoptimized priority={priority} decoding="async" className="object-cover object-center" />
+        <Image src={person.photo_path!} alt={`${person.first_name}'s profile`} fill sizes={PROFILE_SIZES} quality={75} unoptimized={!optimizableImage(person.photo_path!)} priority={priority} decoding="async" draggable={false} className="object-cover object-center" />
       ) : (
         <div className={cn("relative flex h-full w-full items-center justify-center bg-gradient-to-br", gradient)}>
-          <div className="absolute inset-0 opacity-35" style={{ backgroundImage: "radial-gradient(circle at 24% 20%, rgba(255,255,255,.4) 0 1px, transparent 2px), radial-gradient(circle at 78% 70%, rgba(255,255,255,.3) 0 1px, transparent 2px)", backgroundSize: "26px 26px, 34px 34px" }} />
-          <div className="absolute h-[70%] w-[70%] rounded-full border border-white/25 shadow-[0_0_80px_rgba(255,255,255,.12)]" />
            <span aria-hidden="true" className="display-font absolute top-[12%] text-8xl font-bold tracking-[-0.08em] text-white/35 sm:text-9xl">{initials(person.first_name)}</span>
         </div>
       )}
@@ -59,14 +58,13 @@ export const DiscoverProfileCard = memo(function DiscoverProfileCard({ person, s
 
   return (
     <article
-      className={cn("relative isolate overflow-hidden rounded-[28px] border border-white/12 bg-[#16123a] shadow-[0_28px_75px_rgba(0,0,0,.4)]", className)}
+      className={cn("relative isolate overflow-hidden rounded-[28px] border border-white/12 bg-[#16123a]", className)}
       aria-label={`${person.first_name}'s Garba profile`}
       onClick={onOpenDetails}
     >
       <div className="absolute inset-0">
         <IllustratedProfileVisual person={person} priority={priority} />
         <div className="absolute inset-0 bg-gradient-to-t from-[#0a0820] via-[#0a0820]/40 to-transparent" aria-hidden="true" />
-        <div className="absolute inset-0 bg-gradient-to-br from-transparent via-transparent to-[#ff2e93]/10" aria-hidden="true" />
       </div>
 
       <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4 sm:p-5">

@@ -7,25 +7,11 @@ import { AvatarFallback, Button, Card, VerifiedBadge } from "@/components/ui";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
 import type { Match } from "@/lib/supabase/types";
+import { useRelationships } from "@/lib/relationships-context";
 
 export default function ChatsListPage() {
   const { user } = useAuth();
-  const [matches, setMatches] = useState<Match[]>([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    async function load() {
-      if (!user) {
-        setLoading(false);
-        return;
-      }
-      setLoading(true);
-      const data = await db.getMatches(user.id);
-      setMatches(data);
-      setLoading(false);
-    }
-    load();
-  }, [user]);
+  const { matches, loading } = useRelationships();
 
   if (!user) {
     return (

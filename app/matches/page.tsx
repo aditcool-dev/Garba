@@ -8,13 +8,15 @@ import { AvatarFallback, Button, Card, VerifiedBadge } from "@/components/ui";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
 import type { Match, IncomingInterest } from "@/lib/supabase/types";
+import { useRelationships } from "@/lib/relationships-context";
+import { MatchActions } from "@/components/match-actions";
 
 function MatchesContent() {
   const searchParams = useSearchParams();
   const initialTab = searchParams?.get("tab") === "interests" ? "interests" : "matches";
   const { user } = useAuth();
   const [activeTab, setActiveTab] = useState<"matches" | "interests">(initialTab);
-  const [matches, setMatches] = useState<Match[]>([]);
+  const { matches, revision, refetch: refetchMatches } = useRelationships();
   const [interests, setInterests] = useState<IncomingInterest[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
@@ -33,19 +35,13 @@ function MatchesContent() {
       }
 
       setLoading(true);
-      const [userMatches, userInterests] = await Promise.all([
-        db.getMatches(user.id),
-        db.getIncomingInterests(user.id),
-      ]);
-      setMatches(userMatches);
+      const userInterests = await db.getIncomingInterests(user.id);
       setInterests(userInterests);
       setLoading(false);
 
       unsubInterests = db.subscribeToInterests(user.id, async () => {
         const freshInterests = await db.getIncomingInterests(user.id);
-        const freshMatches = await db.getMatches(user.id);
         setInterests(freshInterests);
-        setMatches(freshMatches);
       });
     }
 
@@ -53,7 +49,7 @@ function MatchesContent() {
     return () => {
       if (unsubInterests) unsubInterests();
     };
-  }, [user]);
+  }, [user,revision]);
 
   const handleMatchBack = async (interest: IncomingInterest) => {
     if (!user) return;
@@ -61,11 +57,10 @@ function MatchesContent() {
     setInterests((prev) => prev.filter((item) => item.from_user !== targetUserId));
     await db.likeProfile(user.id, targetUserId, "interested", true);
 
-    const [freshMatches, freshInterests] = await Promise.all([
-      db.getMatches(user.id),
+    const [_, freshInterests] = await Promise.all([
+      refetchMatches(),
       db.getIncomingInterests(user.id),
     ]);
-    setMatches(freshMatches);
     setInterests(freshInterests);
 
     const partnerName = interest.sender_profile?.first_name || "your new partner";
@@ -204,12 +199,15 @@ function MatchesContent() {
                   const name = partner?.first_name || "Garba dancer";
                   const targetChatId = match.id || partner?.id || "chat";
                   return (
-                    <Link key={match.id} href={`/chat/${targetChatId}`} className="group min-w-[148px] flex-1 rounded-[24px] border border-white/10 bg-gradient-to-b from-[#2c205c] to-[#171039] p-3 transition hover:-translate-y-1 hover:border-[#ffd166]/45 sm:min-w-[166px]">
+                    <div key={match.id} className="group min-w-[148px] flex-1 rounded-[24px] border border-white/10 bg-gradient-to-b from-[#2c205c] to-[#171039] p-3 transition hover:-translate-y-1 hover:border-[#ffd166]/45 sm:min-w-[166px]">
+                      <Link href={`/chat/${targetChatId}`} className="block">
                       <div className="flex items-start justify-between"><AvatarFallback src={partner?.photo_path} name={name} fallback={partner?.photo_path || "💃"} size="lg" /><span className="rounded-full bg-[#2dd4bf]/10 px-2 py-1 text-[9px] font-bold text-[#73f4df]">NEW</span></div>
                       <h3 className="mt-3 truncate text-sm font-bold text-white">{name}</h3>
                       <p className="mt-0.5 truncate text-[10px] text-[#aaa8d0]">{partner?.branch || "BMSCE"} · matched</p>
                       <p className="mt-2 text-[10px] font-bold text-[#ffd166] group-hover:text-white">Open chat <span aria-hidden="true">→</span></p>
-                    </Link>
+                      </Link>
+                      <div className="mt-2"><MatchActions match={match} name={name} profileId={match.user_a===user.id?match.user_b:match.user_a} visible /></div>
+                    </div>
                   );
                 })}
               </div>
@@ -230,7 +228,7 @@ function MatchesContent() {
                         <p className="mt-0.5 truncate text-[11px] text-[#aaa8d0]">{partner?.branch || "BMSCE"} · Year {partner?.year || 2}</p>
                         <p className="mt-1 truncate text-[11px] font-semibold text-[#ffd166]">Your match is ready for a plan.</p>
                       </div>
-                      <div className="flex shrink-0 items-center gap-2"><Link href={`/profile/${partner?.id || match.user_b}`} className="hidden rounded-full border border-white/10 px-3 py-2 text-[10px] font-bold text-[#cbc9e8] hover:bg-white/5 sm:inline-flex">Profile</Link><Link href={`/chat/${targetChatId}`} className="inline-flex min-h-10 items-center rounded-full bg-[#f35ca8] px-3.5 py-2 text-[11px] font-bold text-white shadow-lg shadow-[#f35ca8]/15 transition hover:bg-[#e8459b]">Chat <span className="ml-1" aria-hidden="true">→</span></Link></div>
+                      <div className="flex shrink-0 flex-wrap items-center gap-2"><Link href={`/profile/${partner?.id || match.user_b}`} className="hidden rounded-full border border-white/10 px-3 py-2 text-[10px] font-bold text-[#cbc9e8] hover:bg-white/5 sm:inline-flex">Profile</Link><Link href={`/chat/${targetChatId}`} className="inline-flex min-h-10 items-center rounded-full bg-[#f35ca8] px-3.5 py-2 text-[11px] font-bold text-white">Chat →</Link><MatchActions match={match} name={name} profileId={match.user_a===user.id?match.user_b:match.user_a} visible /></div>
                     </Card>
                   );
                 })}

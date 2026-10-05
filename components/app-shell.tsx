@@ -63,7 +63,8 @@ function CountdownPill() {
       title={`${FESTIVAL.name} starts ${FESTIVAL.startDate}`}
     >
       <span className="text-sm" aria-hidden="true">✦</span>
-      <span>{label}</span>
+      <span className="sm:hidden">{festivalState?.status === "countdown" ? `${festivalState.days}d to go` : label}</span>
+      <span className="hidden sm:inline">{label}</span>
     </div>
   );
 }
@@ -75,13 +76,13 @@ export function AppShell({
   children: React.ReactNode;
   title?: string;
 }) {
-  const { user, profile, signOut } = useAuth();
+  const { user, profile } = useAuth();
 
   return (
-    <div className="garba-app-shell flex min-h-screen flex-col justify-between pb-24 md:pb-0 md:pl-20">
+    <div className="garba-app-shell flex min-h-[100dvh] flex-col justify-between pb-24 md:pb-0 md:pl-20">
       <div>
         <header className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 border-b border-white/[0.07] px-4 py-4 sm:px-6 sm:py-5 lg:px-8">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2 sm:gap-3">
             <div className="display-font flex shrink-0 select-none items-center gap-2 text-xl font-bold tracking-tight sm:text-2xl" title="GarbaMate">
               <span className="text-2xl drop-shadow-[0_0_12px_rgba(255,209,102,0.25)] transition-transform active:scale-95" aria-hidden="true">
                 🪩
@@ -91,13 +92,14 @@ export function AppShell({
               </span>
             </div>
             {title && (
-              <span className="hidden max-w-[13rem] truncate rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-[#aaa8d0] sm:inline-block">
+              <span className="hidden max-w-[13rem] truncate rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-[11px] font-semibold text-[#aaa8d0] md:inline-block">
                 {title}
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-1 sm:gap-2">
+          <div className="flex min-w-0 items-center gap-1 sm:gap-2">
+            <CountdownPill />
             {user ? (
               <div className="flex items-center gap-1 sm:gap-2">
                 <div className="shell-notifications"><NotificationTab userId={user.id} /></div>
@@ -117,13 +119,6 @@ export function AppShell({
                     {profile?.first_name || user.email.split("@")[0]}
                   </span>
                 </Link>
-                <button
-                  type="button"
-                  onClick={() => signOut()}
-                  className="touch-target rounded-full px-2 text-xs font-semibold text-[#ffd166] transition hover:bg-white/5 sm:px-3"
-                >
-                  Sign out
-                </button>
               </div>
             ) : (
               <div className="flex items-center gap-2">
@@ -132,9 +127,6 @@ export function AppShell({
                 </Link>
               </div>
             )}
-          </div>
-          <div className="order-3 w-full sm:order-none sm:w-auto">
-            <CountdownPill />
           </div>
         </header>
 

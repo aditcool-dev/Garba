@@ -15,6 +15,7 @@ import {
   SUPABASE_PROJECT_ID,
 } from "@/lib/supabase/client";
 import type { Report, AuditLog, Profile } from "@/lib/supabase/types";
+import { ReportEvidence } from "@/components/report-evidence";
 
 interface RlsTestResult {
   name: string;
@@ -860,6 +861,7 @@ create policy "allow_all_messages" on messages for all using (true) with check (
                     <p className="text-[11px] text-[#73789e]">
                       Reported ID: <code className="font-mono text-[#aab0d0]">{rep.reported_user_id}</code> • {new Date(rep.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
                     </p>
+                    <ReportEvidence reportId={rep.id} />
                   </div>
 
                   {rep.status === "open" && (

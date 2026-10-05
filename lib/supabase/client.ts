@@ -16,6 +16,7 @@ if (typeof window !== "undefined") {
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Profile, Message, Match, Report, LikeKind, ReportReason, IncomingInterest, Like } from "./types";
+import { announceRelationshipChange, clearPairCache, databaseId } from "../relationship-events";
 
 export const SUPABASE_PROJECT_ID = "ywvyuciwggsurhupwrva";
 export const DEFAULT_SUPABASE_URL = "https://ywvyuciwggsurhupwrva.supabase.co";
@@ -623,7 +624,17 @@ export const db = {
     kind: LikeKind = "interested",
     isExplicitMatchBack = false
   ): Promise<{ matched: boolean; matchId?: string }> {
-    const client = getSupabaseClient();
+    if (databaseId(fromUserId) && databaseId(toUserId)) {
+      const remote = getSupabaseClient();
+      if (!remote) throw new Error("Connection unavailable");
+      const { data, error } = await remote.rpc("like_user", { target: toUserId, kind });
+      if (error) throw error;
+      if (!data || data.error) throw new Error(data?.error || "Could not send interest");
+      announceRelationshipChange();
+      return { matched: !!data.matched, matchId: data.match_id || undefined };
+    }
+    if ((await this.getBlockedUserIds(fromUserId)).has(toUserId)) throw new Error("blocked");
+    const client = databaseId(fromUserId) && databaseId(toUserId) ? getSupabaseClient() : null;
     let isMatched = Boolean(isExplicitMatchBack);
     let matchId: string | undefined = undefined;
 
@@ -762,6 +773,7 @@ export const db = {
         user_b: high,
         status: "active",
         created_at: new Date().toISOString(),
+        chat_started_at: existingMatchIdx >= 0 && localMatches[existingMatchIdx].status === "active" ? localMatches[existingMatchIdx].chat_started_at || localMatches[existingMatchIdx].created_at : new Date().toISOString(),
         partner: partner || undefined,
       };
       if (existingMatchIdx >= 0) {
@@ -783,7 +795,8 @@ export const db = {
       this.broadcastInterest(fromUserId, toUserId, isMatched, matchId, senderProfile || undefined);
     }
 
-    return { matched: isMatched, matchId };
+    announceRelationshipChange();
+    return { matched: isMatched, matchId: isMatched ? matchId : undefined };
   },
 
   broadcastMatchCreated(userA: string, userB: string, matchId: string) {
@@ -1037,9 +1050,11 @@ export const db = {
           data.forEach((r: any) => {
             if (r.to_user) result.add(r.to_user);
           });
+          if (databaseId(userId)) return result;
         }
+        if (error && databaseId(userId)) throw error;
       } catch (err) {
-        console.warn("Supabase getOutgoingLikedUserIds error:", err);
+        if (databaseId(userId)) throw err;
       }
     }
     const localLikes = getLocalStore<Like[]>(LIKES_KEY, []);
@@ -1073,9 +1088,11 @@ export const db = {
           data.forEach((r: any) => {
             if (r.to_user) result.add(r.to_user);
           });
+          if (databaseId(userId)) return result;
         }
+        if (error && databaseId(userId)) throw error;
       } catch (err) {
-        console.warn("Supabase getOutgoingPassedUserIds error:", err);
+        if (databaseId(userId)) throw err;
       }
     }
     const localPasses = getLocalStore<any[]>(PASSES_KEY, []);
@@ -1088,6 +1105,13 @@ export const db = {
   },
 
   async getIncomingInterests(currentUserId: string): Promise<IncomingInterest[]> {
+    if (databaseId(currentUserId)) {
+      const client = getSupabaseClient();
+      if (!client) return [];
+      const { data, error } = await client.rpc("get_incoming_interests");
+      if (error) throw error;
+      return Promise.all((data || []).map(async (row: any) => ({ id: row.id, from_user: row.from_user, to_user: row.to_user, kind: row.kind, created_at: row.created_at, sender_profile: (await this.getProfileById(row.from_user)) || undefined })));
+    }
     const [matches, passedUserIds] = await Promise.all([
       this.getMatches(currentUserId),
       this.getOutgoingPassedUserIds(currentUserId),
@@ -1323,20 +1347,21 @@ export const db = {
   async getMatches(currentUserId: string): Promise<Match[]> {
     const localMatches = getLocalStore<Match[]>(MATCHES_KEY, []);
     const localUserMatches = localMatches.filter(
-      (m) => m.user_a === currentUserId || m.user_b === currentUserId
+      (m) => m.status === "active" && (m.user_a === currentUserId || m.user_b === currentUserId)
     );
 
-    const client = getSupabaseClient();
+    const client = databaseId(currentUserId) ? getSupabaseClient() : null;
     if (client) {
       try {
         const { data: rows, error } = await client
           .from("matches")
-          .select("id, user_a, user_b, status, created_at")
+          .select("id, user_a, user_b, status, created_at, chat_started_at, unmatched_at, unmatched_by")
           .or(`user_a.eq.${currentUserId},user_b.eq.${currentUserId}`)
           .eq("status", "active")
           .order("created_at", { ascending: false });
 
-        if (!error && rows && rows.length > 0) {
+        if (error) throw error;
+        if (rows) {
           // Collect partner IDs
           const partnerIds = Array.from(
             new Set(rows.map((r) => (r.user_a === currentUserId ? r.user_b : r.user_a)))
@@ -1368,47 +1393,124 @@ export const db = {
               user_b: r.user_b,
               status: r.status,
               created_at: r.created_at,
+              chat_started_at: r.chat_started_at,
               partner,
             });
           }
 
-          // Merge with any local matches not yet in remote
-          const merged = [...remoteMatches];
-          for (const lm of localUserMatches) {
-            if (!merged.some((m) => (m.user_a === lm.user_a && m.user_b === lm.user_b) || m.id === lm.id)) {
-              merged.push(lm);
-            }
-          }
-
-          setLocalStore(MATCHES_KEY, merged);
-          return merged;
+          setLocalStore(MATCHES_KEY, [...localMatches.filter((match) => match.user_a !== currentUserId && match.user_b !== currentUserId), ...remoteMatches]);
+          return remoteMatches;
         }
       } catch (err) {
-        console.warn("Supabase matches query failed:", err);
+        console.warn("Active matches unavailable:",err);
+        throw err;
       }
     }
     return localUserMatches;
   },
 
   async getMessages(matchId: string): Promise<Message[]> {
+    const match = await this.getChatMatch(matchId);
+    if (!match) return [];
     const client = getSupabaseClient();
-    if (client) {
+    if (client && databaseId(matchId)) {
       try {
         const { data, error } = await client
           .from("messages")
           .select("*")
           .eq("match_id", matchId)
+          .gte("created_at", match.chat_started_at || match.created_at)
           .order("created_at", { ascending: true });
-        if (!error && data) return data as Message[];
+        if (error) throw error;
+        if (data) return data as Message[];
       } catch (err) {
-        console.warn("Supabase messages query failed:", err);
+        console.warn("Chat messages unavailable:",err);
+        throw err;
       }
     }
     const all = getLocalStore<Record<string, Message[]>>(MESSAGES_KEY, {});
-    return all[matchId] || [];
+    return (all[matchId] || []).filter((message) => message.created_at >= (match.chat_started_at || match.created_at));
   },
 
-  async sendMessage(matchId: string, senderId: string, body: string): Promise<Message> {
+  async getChatMatch(matchId: string): Promise<Match | null> {
+    if (databaseId(matchId)) {
+      const client = getSupabaseClient();
+      if (!client) return null;
+      const { data, error } = await client.from("matches").select("*").eq("id", matchId).eq("status", "active").maybeSingle();
+      if (error) throw error;
+      return data as Match | null;
+    }
+    return getLocalStore<Match[]>(MATCHES_KEY, []).find((match) => match.id === matchId && match.status === "active") || null;
+  },
+
+  async getBlockedUserIds(userId: string): Promise<Set<string>> {
+    const result = new Set<string>();
+    if (databaseId(userId)) {
+      const client = getSupabaseClient();
+      if (!client) throw new Error("Connection unavailable");
+      const { data, error } = await client.rpc("discovery_blocked_ids");
+      if (error) throw error;
+      (data || []).forEach((id: string) => result.add(id));
+    } else getLocalStore<{ blocker_id: string; blocked_id: string }[]>("garbamate_blocks", []).forEach((row) => { if (row.blocker_id === userId) result.add(row.blocked_id); if (row.blocked_id === userId) result.add(row.blocker_id); });
+    return result;
+  },
+
+  async unmatchMatch(userId: string, match: Match): Promise<void> {
+    if (![match.user_a, match.user_b].includes(userId)) throw new Error("Not a match participant");
+    if (databaseId(match.id)) {
+      const client = getSupabaseClient();
+      if (!client) throw new Error("Connection unavailable");
+      const { error } = await client.rpc("unmatch_user", { p_match_id: match.id });
+      if (error) throw error;
+    }
+    const rows = getLocalStore<Match[]>(MATCHES_KEY, []);
+    const updated: Match = { ...match, status: "unmatched", unmatched_at: new Date().toISOString(), unmatched_by: userId };
+    setLocalStore(MATCHES_KEY, rows.map((row) => row.id === match.id ? updated : row));
+    clearPairCache(match.user_a, match.user_b);
+    announceRelationshipChange(updated);
+  },
+
+  async blockUser(userId: string, targetId: string): Promise<void> {
+    if (databaseId(userId) && databaseId(targetId)) {
+      const client = getSupabaseClient();
+      if (!client) throw new Error("Connection unavailable");
+      const { error } = await client.from("blocks").upsert({ blocker_id: userId, blocked_id: targetId }, { onConflict: "blocker_id,blocked_id" });
+      if (error) throw error;
+    }
+    const rows = getLocalStore<{ blocker_id: string; blocked_id: string }[]>("garbamate_blocks", []);
+    if (!rows.some((row) => row.blocker_id === userId && row.blocked_id === targetId)) rows.push({ blocker_id: userId, blocked_id: targetId });
+    setLocalStore("garbamate_blocks", rows);
+    announceRelationshipChange();
+  },
+
+  subscribeToMatches(userId: string, onChanged: (match?: Match) => void) {
+    if (typeof window === "undefined") return () => {};
+    const accept = (match?: Match) => { if (!match || !match.user_a || [match.user_a, match.user_b].includes(userId)) onChanged(match); };
+    let bc: BroadcastChannel | null = null;
+    try { bc = new BroadcastChannel("garbamate_matches"); bc.onmessage = (event) => accept(event.data); } catch { /* optional */ }
+    const storage = (event: StorageEvent) => { if (event.key === MATCHES_KEY || event.key === "garbamate_blocks") onChanged(); };
+    window.addEventListener("storage", storage);
+    const client = getSupabaseClient();
+    const channel = client?.channel(`active-matches:${userId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "matches", filter: `user_a=eq.${userId}` }, (payload) => accept(payload.new as Match))
+      .on("postgres_changes", { event: "*", schema: "public", table: "matches", filter: `user_b=eq.${userId}` }, (payload) => accept(payload.new as Match)).subscribe();
+    return () => { bc?.close(); window.removeEventListener("storage", storage); if (client && channel) void client.removeChannel(channel); };
+  },
+
+  async markTutorialSeen(userId: string) {
+    if (databaseId(userId)) {
+      const client = getSupabaseClient();
+      if (!client) throw new Error("Connection unavailable");
+      const { error } = await client.rpc("mark_discover_tutorial_seen");
+      if (error) throw error;
+    }
+    const rows = getLocalStore<Profile[]>(PROFILES_KEY, []);
+    setLocalStore(PROFILES_KEY, rows.map((row) => row.id === userId ? { ...row, has_seen_discover_tutorial: true } : row));
+  },
+
+  async sendMessage(matchId: string, senderId: string, body: string, generation?: string): Promise<Message> {
+    const match = await this.getChatMatch(matchId);
+    if (!match || ![match.user_a, match.user_b].includes(senderId) || (generation && generation !== match.chat_started_at)) throw new Error("This chat is no longer available");
     const newMsg: Message = {
       id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
       match_id: matchId,
@@ -1421,18 +1523,20 @@ export const db = {
     const client = getSupabaseClient();
     let createdMsg = newMsg;
 
-    if (client) {
+    if (client && databaseId(matchId)) {
       try {
         const { data, error } = await client
           .from("messages")
-          .insert({ match_id: matchId, sender_id: senderId, body })
+          .insert({ match_id: matchId, sender_id: senderId, body, chat_started_at: generation || match.chat_started_at })
           .select()
           .single();
-        if (!error && data) {
+        if (error) throw error;
+        if (data) {
           createdMsg = data as Message;
         }
       } catch (err) {
-        console.warn("Supabase sendMessage failed:", err);
+        console.warn("Message was not sent:",err);
+        throw err;
       }
     }
 
@@ -1546,7 +1650,8 @@ export const db = {
 
     // 4. Live fallback interval (every 1.5s) to guarantee zero dropped messages
     const pollInterval = setInterval(async () => {
-      const msgs = await this.getMessages(matchId);
+      let msgs: Message[];
+      try { msgs = await this.getMessages(matchId); } catch { return; }
       if (msgs.length > 0) {
         const last = msgs[msgs.length - 1];
         onNewMessage(last);

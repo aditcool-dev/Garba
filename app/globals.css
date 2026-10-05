@@ -225,6 +225,18 @@ select option:checked {
 /* Motion sets touch-action:none for two-axis drag. Preserve native page scroll;
    the dedicated Vibe grip opts into touch-action:none independently. */
 .swipe-card { touch-action: pan-y !important; }
+.swipe-card { contain: layout paint style; backface-visibility: hidden; }
+html[data-dragging="true"] *, html[data-tutorial="true"] * { animation-play-state: paused !important; }
+.discover-floor *, .discover-floor *::before, .discover-floor *::after { animation: none !important; }
+html[data-discover="true"] *, html[data-discover="true"] *::before, html[data-discover="true"] *::after { animation: none !important; }
+/* Fixed navigation also samples moving pixels underneath it on a mobile GPU. */
+html[data-discover="true"] .garba-app-shell nav,
+html[data-discover="true"] .discover-floor .garba-card,
+html[data-discover="true"] .shell-notifications * { backdrop-filter: none !important; }
+.tutorial-profile h2 { font-size: 1.5rem; }
+.tutorial-profile p { font-size: .7rem; line-height: 1rem; }
+.tutorial-profile .display-font[aria-hidden="true"] { font-size: 3rem; top: 8%; }
+.swipe-edge { border: 3px solid; will-change: opacity; }
 .discover-actions { bottom: calc(5rem + env(safe-area-inset-bottom)); }
 .vibe-pulse { animation: vibe-pulse 2.8s ease-in-out infinite; }
 @keyframes vibe-pulse { 50% { transform: scale(1.045); } }

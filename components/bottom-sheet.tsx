@@ -9,11 +9,12 @@ export type BottomSheetProps = {
   title?: React.ReactNode;
   description?: React.ReactNode;
   closeLabel?: string;
+  stickyHeader?: boolean;
   className?: string;
   children: React.ReactNode;
 };
 
-export function BottomSheet({ open, onClose, title, description, closeLabel = "Close", className, children }: BottomSheetProps) {
+export function BottomSheet({ open, onClose, title, description, closeLabel = "Close", stickyHeader=false, className, children }: BottomSheetProps) {
   const titleId = useId();
   const descriptionId = useId();
   const dialogRef = useRef<HTMLElement>(null);
@@ -86,7 +87,7 @@ export function BottomSheet({ open, onClose, title, description, closeLabel = "C
         aria-describedby={description !== undefined ? descriptionId : undefined}
       >
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" aria-hidden="true" />
-        <div className="flex items-start justify-between gap-4">
+        <div className={cn("flex items-start justify-between gap-4",stickyHeader&&"sticky top-0 z-30 bg-[#150f3a] pb-3")}>
           <div className="min-w-0">
             {title !== undefined && <h2 id={titleId} className="display-font text-xl font-bold text-white">{title}</h2>}
             {description !== undefined && <p id={descriptionId} className="mt-1 text-sm leading-6 text-[#aaa8d0]">{description}</p>}

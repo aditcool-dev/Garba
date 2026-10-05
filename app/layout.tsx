@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { AuthProvider } from "@/lib/supabase/auth-context";
+import { RelationshipsProvider } from "@/lib/relationships-context";
 
 export const metadata: Metadata = {
   title: "GarbaMate — Find your Garba partner",
@@ -13,7 +14,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <AuthProvider>{children}</AuthProvider>
+        <AuthProvider><RelationshipsProvider>{children}</RelationshipsProvider></AuthProvider>
       </body>
     </html>
   );

@@ -1,13 +1,25 @@
 "use client";
 
+import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { motion, useMotionValue, useReducedMotion } from "framer-motion";
+import { motion, useAnimationControls, useMotionValue, useReducedMotion } from "framer-motion";
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { BottomSheet } from "@/components/bottom-sheet";
 import { IllustratedProfileVisual, isImageSrc } from "@/components/discover-profile-card";
 import { SwipeCard, swipeHaptic, type SwipeDecision, type SwipeHandle } from "@/components/swipe-card";
 import { capturePassUndo } from "@/lib/pass-undo";
+import { eligibleCandidate, newFeedSeed, seededUniform } from "@/lib/feed";
+import { discoverySnapshot } from "@/lib/discovery-api";
+import { useRelationships } from "@/lib/relationships-context";
+import { MatchActions } from "@/components/match-actions";
+import { waitForSwipeIdle } from "@/lib/swipe-idle";
+import { TutorialBoundary } from "@/components/tutorial-boundary";
+import { DiscoverFeedback,PassUndoToast,type FeedbackHandle } from "@/components/discover-feedback";
+import { MATCH_INACTIVE } from "@/lib/relationship-events";
+import { ensureProfileDecoded, preloadProfileImage } from "@/lib/profile-images";
+import { FpsMeter } from "@/components/fps-meter";
+import type { TutorialCloseReason } from "@/components/discover-tutorial";
 import { AvatarFallback, Badge, Button, Card, NightStrip, ScoreRing, VerifiedBadge } from "@/components/ui";
 import { BRANCHES } from "@/config/branches";
 import { compatibilityScore } from "@/lib/scoring";
@@ -21,6 +33,7 @@ type StatusFilter = "All" | "matches" | "incoming" | "sent" | "passed";
 const STYLE_OPTIONS = ["Traditional Garba", "Bollywood Garba", "Dandiya", "2-Taali", "3-Taali", "Fast Garba", "Any"];
 const EXPERIENCE_OPTIONS = ["Beginner", "Intermediate", "Advanced", "Just for the fun 😂"];
 const EMPTY_NIGHTS: number[] = [];
+const DiscoverTutorial = dynamic(() => import("@/components/discover-tutorial").then((module) => module.DiscoverTutorial), { ssr: false });
 
 function shuffleArray<T>(items: T[]) {
   const copy = [...items];
@@ -90,8 +103,11 @@ function GuestDiscovery({ names, searchTerm, setSearchTerm, onLogin }: { names: 
 }
 
 export default function Discover() {
-  const { user, profile: myProfile } = useAuth();
+  const { user, profile: myProfile, refreshProfile } = useAuth();
+  const { matches: userMatches, revision, refetch: refetchMatches } = useRelationships();
+  const feedProfileKey=JSON.stringify(myProfile?{...myProfile,has_seen_discover_tutorial:undefined,updated_at:undefined}:null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [catalog,setCatalog]=useState<Profile[]>([]);
   const [guestNames, setGuestNames] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [matchPopup, setMatchPopup] = useState<{ person: Profile; matchId: string } | null>(null);
@@ -108,20 +124,34 @@ export default function Discover() {
   const [loginPrompt, setLoginPrompt] = useState(false);
   const [incomingCount, setIncomingCount] = useState(0);
   const [incomingSenderIds, setIncomingSenderIds] = useState<Set<string>>(new Set());
-  const [userMatches, setUserMatches] = useState<Match[]>([]);
   const [likedUserIds, setLikedUserIds] = useState<Set<string>>(new Set());
   const [passedUserIds, setPassedUserIds] = useState<Set<string>>(new Set());
-  const [feedbackToast, setFeedbackToast] = useState<string | null>(null);
+  const feedback=useRef<FeedbackHandle>(null);
   const [vibeCount, setVibeCount] = useState(0);
+  const [feedSeed, setFeedSeed] = useState(() => newFeedSeed());
+  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(new Set());
+  const [tutorialOpen, setTutorialOpen] = useState(false);
+  const [howItWorksOpen, setHowItWorksOpen] = useState(false);
+  const tutorialShown = useRef(false);
+  const tutorialOwner=useRef(user?.id);
+  const [consumed, setConsumed] = useState<Set<string>>(new Set());
+  const [feedError, setFeedError] = useState<string | null>(null);
+  const [reshuffle, setReshuffle] = useState(0);
+  const stackAnimation=useAnimationControls();
+  const dataRequest = useRef(0);
+  const snapshotSession=useRef("");
+  const previousMatches = useRef<Match[]>([]);
   const topCard = useRef<SwipeHandle>(null);
   const [restoredCards, setRestoredCards] = useState<Profile[]>([]);
   const [undoPass, setUndoPass] = useState<{ person: Profile; reverse: Promise<() => Promise<void>> } | null>(null);
   const undoBusy = useRef(false);
   const [returningId, setReturningId] = useState<string | null>(null);
-  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const mutationChains = useRef(new Map<string, Promise<unknown>>());
   const prefersReducedMotion = useReducedMotion();
   const swipeProgress = useMotionValue(0);
+  useEffect(()=>{if(tutorialOwner.current!==user?.id){if(tutorialOwner.current){tutorialShown.current=false;setTutorialOpen(false);setHowItWorksOpen(false);setConsumed(new Set());}tutorialOwner.current=user?.id;}},[user?.id]);
+  useEffect(()=>{document.documentElement.dataset.discover="true";const url=new URL(location.href);if(url.searchParams.get("tutorial")==="1"){setHowItWorksOpen(true);tutorialShown.current=true;url.searchParams.delete("tutorial");history.replaceState(history.state,"",url);}return()=>{delete document.documentElement.dataset.discover;};},[]);
+  useEffect(()=>{if(reshuffle>0)void stackAnimation.start(prefersReducedMotion?{opacity:[.8,1]}:{rotate:[0,-2,2,0],scale:[1,.97,1],transition:{duration:.24}});},[reshuffle,stackAnimation,prefersReducedMotion]);
 
   const matchByPartnerId = useMemo(() => {
     const map = new Map<string, string>();
@@ -133,6 +163,8 @@ export default function Discover() {
   }, [userMatches, user?.id]);
 
   const loadData = useCallback(async () => {
+    const ticket = ++dataRequest.current;
+    try {
     const demoEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_DATA === "true";
     if (!user) {
       const publicNames = await db.getPublicProfileNames();
@@ -143,37 +175,59 @@ export default function Discover() {
       return;
     }
 
-    let allProfiles = await db.getProfiles();
-    if (!allProfiles.length && demoEnabled) allProfiles = INITIAL_DEMO_PROFILES;
-    const available = allProfiles.filter((profile) => profile.id !== user.id);
-    setProfiles(available);
-    setIndex(0);
-
-    const [incoming, matches, outgoingLikes, outgoingPasses] = await Promise.all([
+    if (!myProfile?.onboarding_complete || myProfile.id!==user.id) return;
+    const [incoming, outgoingLikes, outgoingPasses, blocked, available, allProfiles] = await Promise.all([
       db.getIncomingInterests(user.id),
-      db.getMatches(user.id),
       db.getOutgoingLikedUserIds(user.id),
       db.getOutgoingPassedUserIds(user.id),
+      db.getBlockedUserIds(user.id),
+      discoverySnapshot(myProfile, feedSeed),
+      db.getProfiles(),
     ]);
-    setUserMatches(matches);
+    await waitForSwipeIdle();
+    if (ticket !== dataRequest.current) return;
+    const session=`${user.id}:${feedSeed}`;
+    const sameSession=snapshotSession.current===session;snapshotSession.current=session;
+    setProfiles((old)=>{
+      const fresh=new Map(available.map((profile)=>[profile.id,profile]));
+      const reuse=(profile:Profile)=>{const previous=old.find((row)=>row.id===profile.id);return previous&&JSON.stringify(previous)===JSON.stringify(profile)?previous:profile;};
+      if(!sameSession)return available.map(reuse);
+      const remaining=old.filter((profile)=>fresh.has(profile.id)).map((profile)=>reuse(fresh.get(profile.id)!));
+      const existing=new Set(remaining.map((profile)=>profile.id));
+      for(const profile of available)if(!existing.has(profile.id)){remaining.splice(Math.floor(seededUniform(session,profile.id)*(remaining.length+1)),0,profile);existing.add(profile.id);}
+      return remaining;
+    });
     setIncomingCount(incoming.length);
+    setCatalog(allProfiles);
     setIncomingSenderIds(new Set(incoming.map((item) => item.from_user)));
     setLikedUserIds(outgoingLikes);
     setPassedUserIds(outgoingPasses);
-  }, [user]);
+    setBlockedUserIds(blocked);
+    setFeedError(null);
+    } catch { if (ticket === dataRequest.current) setFeedError("Couldn’t load your floor. Please retry."); }
+  }, [user, feedProfileKey, feedSeed]);
 
   useEffect(() => {
-    void loadData();
     if (!user) return undefined;
     const unsubscribe = db.subscribeToInterests(user.id, async (event) => {
-      const [incoming, matches, passes] = await Promise.all([db.getIncomingInterests(user.id), db.getMatches(user.id), event?.type === "dismissed" ? db.getOutgoingPassedUserIds(user.id) : Promise.resolve(passedUserIds)]);
+      const [incoming, passes] = await Promise.all([db.getIncomingInterests(user.id), db.getOutgoingPassedUserIds(user.id)]);
+      await waitForSwipeIdle();
       setIncomingCount(incoming.length);
       setIncomingSenderIds(new Set(incoming.map((item) => item.from_user)));
-      setUserMatches(matches);
       setPassedUserIds(passes);
     });
-    return () => unsubscribe();
+    return () => { unsubscribe(); ++dataRequest.current; };
   }, [loadData, user]);
+
+  useEffect(() => { void loadData(); }, [revision, loadData]);
+  useEffect(() => {
+    const activeIds=new Set(userMatches.map((match)=>match.id));
+    const returned=previousMatches.current.filter((match)=>!activeIds.has(match.id)).map((match)=>match.user_a===user?.id?match.user_b:match.user_a);
+    if(returned.length)setConsumed((ids)=>{const next=new Set(ids);returned.forEach((id)=>next.delete(id));return next;});
+    const partners=new Set([...returned,...userMatches.map((match)=>match.user_a===user?.id?match.user_b:match.user_a)]);
+    setUndoPass((record)=>record&&partners.has(record.person.id)?null:record);
+    previousMatches.current=userMatches;
+  },[userMatches,user?.id]);
 
   useEffect(() => {
     setIndex(0);
@@ -182,7 +236,7 @@ export default function Discover() {
   }, [filterBranch, filterYear, filterNight, filterStyle, filterExperience, onlyMyNights, filterStatus, searchTerm]);
 
   const statusCounts = useMemo(() => {
-    return profiles.reduce((counts, profile) => {
+    const counts=catalog.reduce((counts, profile) => {
       const matched = matchByPartnerId.has(profile.id);
       const incoming = incomingSenderIds.has(profile.id) && !matched;
       const sent = likedUserIds.has(profile.id) && !matched && !incoming;
@@ -193,9 +247,10 @@ export default function Discover() {
       else if (passed) counts.passed += 1;
       return counts;
     }, { matches: 0, incoming: 0, sent: 0, passed: 0 });
-  }, [profiles, matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds]);
+    return {...counts,matches:userMatches.length};
+  }, [catalog,userMatches,matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds]);
 
-  const filteredProfiles = useMemo(() => profiles.filter((profile) => {
+  const filteredProfiles = useMemo(() => (filterStatus === "matches" ? userMatches.flatMap((match)=>match.partner?[match.partner]:[]) : filterStatus === "All" ? profiles : catalog).filter((profile) => {
     const matched = matchByPartnerId.has(profile.id);
     const incoming = incomingSenderIds.has(profile.id) && !matched;
     const sent = likedUserIds.has(profile.id) && !matched && !incoming;
@@ -204,6 +259,8 @@ export default function Discover() {
     if (filterStatus === "incoming" && !incoming) return false;
     if (filterStatus === "sent" && !sent) return false;
     if (filterStatus === "passed" && !passed) return false;
+    if (blockedUserIds.has(profile.id) || profile.is_hidden || profile.is_suspended || profile.is_banned) return false;
+    if (filterStatus === "All" && (!myProfile || !eligibleCandidate(myProfile,profile,{liked:likedUserIds,passed:passedUserIds,matched:new Set(matchByPartnerId.keys()),blocked:blockedUserIds}))) return false;
     const term = searchTerm.trim().toLowerCase();
     if (term && ![profile.first_name, profile.branch, profile.experience, ...profile.styles, ...profile.interests].some((value) => value.toLowerCase().includes(term))) return false;
     if (filterBranch !== "All" && profile.branch !== filterBranch) return false;
@@ -213,9 +270,11 @@ export default function Discover() {
     if (filterExperience !== "All" && profile.experience !== filterExperience) return false;
     if (onlyMyNights && myProfile && !profile.available_nights.some((night) => myProfile.available_nights.includes(night))) return false;
     return true;
-  }), [profiles, matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds, filterStatus, searchTerm, filterBranch, filterYear, filterNight, filterStyle, filterExperience, onlyMyNights, myProfile]);
+  }), [profiles,catalog,userMatches, matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds, blockedUserIds, filterStatus, searchTerm, filterBranch, filterYear, filterNight, filterStyle, filterExperience, onlyMyNights, myProfile]);
 
-  const stack = [...restoredCards, ...filteredProfiles.slice(index).filter((profile) => !restoredCards.some((restored) => restored.id === profile.id))];
+  const orderedProfiles = filteredProfiles;
+
+  const stack = [...restoredCards.filter((profile)=>!blockedUserIds.has(profile.id)), ...orderedProfiles.filter((profile)=>(filterStatus!=="All"||!consumed.has(profile.id))&&!restoredCards.some((restored)=>restored.id===profile.id))];
   const person = stack[0];
   const myNights = myProfile?.available_nights || EMPTY_NIGHTS;
 
@@ -235,45 +294,42 @@ export default function Discover() {
   }) : 0;
 
   const showToast = useCallback((message: string) => {
-    if (toastTimer.current) clearTimeout(toastTimer.current);
-    setFeedbackToast(message);
-    toastTimer.current = setTimeout(() => setFeedbackToast(null), 2600);
+    feedback.current?.show(message);
   }, []);
 
-  useEffect(() => () => { if (toastTimer.current) clearTimeout(toastTimer.current); }, []);
-  useEffect(() => {
-    if (!undoPass) return;
-    const timer = setTimeout(() => setUndoPass(null), 4000);
-    return () => clearTimeout(timer);
-  }, [undoPass]);
-
-  const imageSources = stack.slice(1, 4).map((profile) => profile.photo_path).filter(isImageSrc).join("\n");
+  const imageSources = stack.slice(1, 3).map((profile) => profile.photo_path).filter(isImageSrc).join("\n");
   useEffect(() => {
     const images = imageSources.split("\n").filter(Boolean).map((src) => {
-      const image = new window.Image();
-      image.decoding = "async";
-      image.src = src;
-      void image.decode().catch(() => undefined);
-      return image;
+      return preloadProfileImage(src);
     });
     return () => { images.forEach((image) => { image.onload = null; }); };
   }, [imageSources]);
 
+  useEffect(() => {
+    if (!myProfile?.onboarding_complete || myProfile.id!==user?.id || myProfile.has_seen_discover_tutorial || tutorialShown.current || matchPopup || detailsOpen || filtersOpen) return;
+    const show=()=>{if(!tutorialShown.current&&!topCard.current?.isBusy()&&!mutationChains.current.size&&document.documentElement.dataset.dragging!=="true"){tutorialShown.current=true;setTutorialOpen(true);}};
+    show(); window.addEventListener("garbamate:swipe-settled",show);
+    return ()=>window.removeEventListener("garbamate:swipe-settled",show);
+  }, [myProfile, user?.id, matchPopup, detailsOpen, filtersOpen]);
+
+  useEffect(()=>{const closeInactive=(event:Event)=>{const id=(event as CustomEvent<string>).detail;setMatchPopup((popup)=>popup?.matchId===id?null:popup);};window.addEventListener(MATCH_INACTIVE,closeInactive);return()=>window.removeEventListener(MATCH_INACTIVE,closeInactive);},[]);
+
   const canDecide = useCallback((direction: SwipeDecision, target: Profile) => {
     if (undoBusy.current) return false;
+    if (tutorialOpen || howItWorksOpen) return false;
     if (!user) { setLoginPrompt(true); return false; }
     if (direction === "vibe" && vibeCount >= 3) { showToast("Your 3 Garba Vibes for today are used up ✨"); return false; }
     const matchId = direction !== "pass" ? matchByPartnerId.get(target.id) : undefined;
     if (matchId) { window.location.href = `/chat/${matchId}`; return false; }
     return true;
-  }, [user, vibeCount, showToast, matchByPartnerId]);
+  }, [user, vibeCount, showToast, matchByPartnerId,tutorialOpen,howItWorksOpen]);
 
   const handleDecide = useCallback((direction: SwipeDecision, target: Profile) => {
     if (!user) return;
     setDetailsOpen(false);
     setReturningId(null);
     if (restoredCards.some((profile) => profile.id === target.id)) setRestoredCards((cards) => cards.filter((profile) => profile.id !== target.id));
-    else setIndex((current) => current + 1);
+    else setConsumed((ids)=>new Set(ids).add(target.id));
     const wasLiked = likedUserIds.has(target.id);
     const wasPassed = passedUserIds.has(target.id);
     const wasIncoming = incomingSenderIds.has(target.id);
@@ -294,12 +350,13 @@ export default function Discover() {
       const result = await db.likeProfile(user.id, target.id, kind, wasIncoming);
       if (result.matched) {
         const matchId = result.matchId || `match-${user.id}-${target.id}`;
-        setUserMatches((current) => current.some((match) => match.id === matchId) ? current : [...current, { id: matchId, user_a: user.id < target.id ? user.id : target.id, user_b: user.id < target.id ? target.id : user.id, status: "active", created_at: new Date().toISOString(), partner: target }]);
+        await refetchMatches();
         setMatchPopup({ person: target, matchId });
       } else showToast(kind === "garba_vibe" ? `⭐ Garba Vibe sent to ${target.first_name}` : `Interested sent to ${target.first_name}`);
       return async () => undefined;
     });
     mutationChains.current.set(target.id, operation);
+    void operation.finally(()=>{if(mutationChains.current.get(target.id)===operation)mutationChains.current.delete(target.id);window.dispatchEvent(new Event("garbamate:swipe-settled"));}).catch(()=>undefined);
     if (direction === "pass") setUndoPass({ person: target, reverse: operation });
     void operation.catch(() => {
       setLikedUserIds((ids) => { const next = new Set(ids); if (wasLiked) next.add(target.id); else next.delete(target.id); return next; });
@@ -311,7 +368,7 @@ export default function Discover() {
       setReturningId(target.id);
       showToast("Couldn’t save that decision. Please try again.");
     });
-  }, [user, restoredCards, likedUserIds, passedUserIds, incomingSenderIds, showToast]);
+  }, [user, restoredCards, likedUserIds, passedUserIds, incomingSenderIds, showToast,refetchMatches]);
 
   const triggerSwipe = useCallback((direction: SwipeDecision) => {
     if (undoBusy.current || topCard.current?.isBusy()) return;
@@ -320,10 +377,14 @@ export default function Discover() {
   }, []);
 
   // Keep memoized cards independent of toast/mutation renders while reading the latest policy.
-  const decisionCallbacks = useRef({ canDecide, handleDecide });
-  useLayoutEffect(() => { decisionCallbacks.current = { canDecide, handleDecide }; }, [canDecide, handleDecide]);
+  const decisionCallbacks = useRef({ canDecide, handleDecide,next:stack[1] });
+  useLayoutEffect(() => { decisionCallbacks.current = { canDecide, handleDecide,next:stack[1] }; }, [canDecide, handleDecide,stack]);
   const checkDecision = useCallback((direction: SwipeDecision, target: Profile) => decisionCallbacks.current.canDecide(direction, target), []);
-  const completeDecision = useCallback((direction: SwipeDecision, target: Profile) => decisionCallbacks.current.handleDecide(direction, target), []);
+  const completeDecision = useCallback((direction: SwipeDecision, target: Profile) => {
+    const next=decisionCallbacks.current.next;
+    if(next?.photo_path&&isImageSrc(next.photo_path))void ensureProfileDecoded(next.photo_path).then(()=>decisionCallbacks.current.handleDecide(direction,target));
+    else decisionCallbacks.current.handleDecide(direction,target);
+  }, []);
   const openDetails = useCallback(() => setDetailsOpen(true), []);
   const triggerPass = useCallback(() => triggerSwipe("pass"), [triggerSwipe]);
   const triggerLike = useCallback(() => triggerSwipe("like"), [triggerSwipe]);
@@ -331,9 +392,12 @@ export default function Discover() {
   const handleUndo = async () => {
     if (!undoPass || undoBusy.current || topCard.current?.isBusy()) return;
     undoBusy.current = true;
+    const targetId=undoPass.person.id;
+    let undoOperation:Promise<void>|null=null;
     try {
       const reverse = await undoPass.reverse;
       const operation = reverse();
+      undoOperation=operation;
       mutationChains.current.set(undoPass.person.id, operation);
       await operation;
       setPassedUserIds(await db.getOutgoingPassedUserIds(user!.id));
@@ -345,20 +409,48 @@ export default function Discover() {
       setReturningId(undoPass.person.id);
       setUndoPass(null);
     } catch { showToast("Couldn’t undo the pass. Please try again."); }
-    finally { undoBusy.current = false; }
+    finally { undoBusy.current = false;if(mutationChains.current.get(targetId)===undoOperation)mutationChains.current.delete(targetId);window.dispatchEvent(new Event("garbamate:swipe-settled")); }
   };
+
+  const shuffleFeed = () => {
+    if(topCard.current?.isBusy())return;
+    setFeedSeed(newFeedSeed());
+    setConsumed(new Set());setReshuffle((value)=>value+1);
+    setIndex(0);
+    setRestoredCards([]);
+    showToast("Shuffled your floor ✨");
+  };
+
+  const replayTutorial=()=>{if(!matchPopup&&!topCard.current?.isBusy()&&!mutationChains.current.size){tutorialShown.current=true;setHowItWorksOpen(true);}};
+
+  const closeTutorial = async (_reason: TutorialCloseReason) => {
+    tutorialShown.current=true;
+    setTutorialOpen(false);
+    setHowItWorksOpen(false);
+    if (user) {
+      try { await db.markTutorialSeen(user.id); await refreshProfile(); } catch { /* Fail open; retry on a later visit. */ }
+    }
+  };
+
+  useEffect(()=>{
+    if(!tutorialOpen&&!howItWorksOpen)return;
+    const escape=(event:KeyboardEvent)=>{if(event.key==="Escape"){event.preventDefault();event.stopImmediatePropagation();void closeTutorial("skip");}};
+    document.addEventListener("keydown",escape,true);
+    const timeout=setTimeout(()=>{if(!document.querySelector("[data-tutorial-step]"))void closeTutorial("error");},8000);
+    return()=>{clearTimeout(timeout);document.removeEventListener("keydown",escape,true);};
+  },[tutorialOpen,howItWorksOpen,user?.id]);
 
   useEffect(() => {
     if (!user) return undefined;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || detailsOpen || filtersOpen || matchPopup || !person) return;
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement || detailsOpen || filtersOpen || matchPopup || tutorialOpen || howItWorksOpen || !person) return;
       if (event.key === "ArrowLeft") { event.preventDefault(); triggerSwipe("pass"); }
       if (event.key === "ArrowRight") { event.preventDefault(); triggerSwipe("like"); }
       if (event.key === "ArrowUp") { event.preventDefault(); triggerSwipe("vibe"); }
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [user, person, triggerSwipe, detailsOpen, filtersOpen, matchPopup]);
+  }, [user, person, triggerSwipe, detailsOpen, filtersOpen, matchPopup,tutorialOpen,howItWorksOpen]);
 
   const resetFilters = () => {
     setSearchTerm(""); setFilterBranch("All"); setFilterYear("All"); setFilterNight("All"); setFilterStyle("All"); setFilterExperience("All"); setOnlyMyNights(false); setFilterStatus("All"); setIndex(0);
@@ -388,13 +480,20 @@ export default function Discover() {
 
   return (
     <AppShell title="Discover">
-      <div className="relative mx-auto max-w-6xl pb-36 lg:pb-12">
-        {feedbackToast && <div role="status" className="fixed left-1/2 top-20 z-50 max-w-[90vw] -translate-x-1/2 rounded-full border border-[#ffc83d]/30 bg-[#211952] px-4 py-2.5 text-xs font-bold text-[#ffe49a] shadow-xl">{feedbackToast}</div>}
-        {undoPass && <div role="status" className="fixed left-1/2 top-36 z-50 flex -translate-x-1/2 items-center gap-2 rounded-full border border-white/15 bg-[#211952] px-4 py-2 text-xs text-white shadow-xl">Passed · <button type="button" onClick={() => void handleUndo()} className="min-h-8 font-bold text-[#73f4df]">Undo</button></div>}
+      <div className="discover-floor relative mx-auto max-w-6xl pb-36 lg:pb-12" inert={tutorialOpen || howItWorksOpen}>
+        <FpsMeter />
+        {feedError&&<div role="alert" className="mb-3 rounded-xl bg-[#211952] p-4 text-sm">{feedError}<button type="button" className="ml-3 underline" onClick={()=>void loadData()}>Retry</button></div>}
+        <DiscoverFeedback ref={feedback} />
+        <PassUndoToast record={undoPass} onUndo={()=>void handleUndo()} />
 
-        <div className="mb-5 flex items-end justify-between gap-3 lg:mb-6">
+        <div className="mb-5 flex flex-wrap items-end justify-between gap-3 lg:mb-6">
           <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#ffc83d]">Your private floor</p><h1 className="display-font mt-1 text-3xl font-bold tracking-[-0.06em] text-white sm:text-4xl">Find your rhythm.</h1><p className="mt-1.5 text-xs text-[#aaa8d0]">One card, one vibe, one night at a time.</p></div>
-          <div className="flex items-center gap-2"><span className="hidden rounded-full border border-[#2de2c4]/25 bg-[#2de2c4]/10 px-2.5 py-1.5 text-[10px] font-bold text-[#73f4df] sm:inline-flex">{filteredProfiles.length} on the floor</span><button type="button" onClick={() => setFiltersOpen(true)} className="touch-target inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8] hover:border-[#ffc83d]/50"><span aria-hidden="true">☷</span> Filters</button></div>
+           <div className="flex items-center gap-2">
+             <span className="hidden rounded-full border border-[#2de2c4]/25 bg-[#2de2c4]/10 px-2.5 py-1.5 text-[10px] font-bold text-[#73f4df] sm:inline-flex">{orderedProfiles.length} on the floor</span>
+             <button type="button" onClick={replayTutorial} aria-label="How it works" className="touch-target inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]">?</button>
+             <button type="button" onClick={shuffleFeed} aria-label="Shuffle feed" className="touch-target inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]">⤨ <span className="hidden sm:inline">Shuffle</span></button>
+             <button type="button" onClick={()=>setFiltersOpen(true)} className="touch-target inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]"><span aria-hidden="true">☷</span> Filters</button>
+           </div>
         </div>
 
         {incomingCount > 0 && <Link href="/matches?tab=interests" className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-[#ffc83d]/30 bg-[#ffc83d]/[0.08] px-4 py-3 transition hover:bg-[#ffc83d]/[0.13]"><div className="flex items-center gap-3"><span className="text-xl">✦</span><div><p className="text-xs font-bold text-white">{incomingCount} student{incomingCount === 1 ? "" : "s"} showed interest</p><p className="mt-0.5 text-[10px] text-[#ffe49a]">Review your requests</p></div></div><span className="text-xs font-bold text-[#ffc83d]">Open →</span></Link>}
@@ -409,13 +508,14 @@ export default function Discover() {
 
           <section className="min-w-0" aria-label="Discover profile cards">
             {person ? <div className="relative mx-auto w-full max-w-[460px]">
-              <div className="discover-stack relative">
-                {stack.slice(0, 3).map((profile, depth) => <SwipeCard key={profile.id} ref={depth === 0 ? topCard : undefined} depth={depth} progress={swipeProgress} returning={returningId === profile.id} person={profile} score={scoreFor(profile)} myNights={myNights} onOpenDetails={openDetails} onPass={triggerPass} onInterested={triggerLike} isMatched={matchByPartnerId.has(profile.id)} canDecide={checkDecision} onDecide={completeDecision} />)}
-              </div>
+              <motion.div className="discover-stack relative" animate={stackAnimation}>
+                {stack.slice(0, 3).map((profile, depth) => <SwipeCard key={profile.id} ref={depth === 0 ? topCard : undefined} depth={depth} progress={swipeProgress} disabled={tutorialOpen || howItWorksOpen || matchByPartnerId.has(profile.id)} returning={returningId === profile.id} person={profile} score={scoreFor(profile)} myNights={myNights} onOpenDetails={openDetails} onPass={triggerPass} onInterested={triggerLike} isMatched={matchByPartnerId.has(profile.id)} canDecide={checkDecision} onDecide={completeDecision} />)}
+              </motion.div>
+              {matchByPartnerId.has(person.id)&&<div className="mt-3 flex justify-center"><MatchActions match={userMatches.find((match)=>match.id===matchByPartnerId.get(person.id))} profileId={person.id} name={person.first_name} visible /></div>}
               <p className="mt-3 text-center text-[10px] font-semibold text-[#73789e]">A fun score based on nights, styles, and interests — never a judgement.</p>
             </div> : <Card className="mx-auto max-w-[460px] border-dashed border-white/15 py-20 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-[#ffc83d]/30 bg-[#ffc83d]/10 text-3xl">✦</div><h2 className="display-font mt-5 text-2xl font-bold text-white">Looks like you&apos;ve explored everyone nearby 👀</h2><p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-[#aaa8d0]">Check back when more BMSCE students join.</p><Button className="mt-6" onClick={() => { resetFilters(); void loadData(); }}>Refresh the floor</Button></Card>}
 
-            {person && <div className="discover-actions fixed inset-x-0 z-30 flex items-center justify-center gap-3 px-4 md:static md:mt-5 md:px-0">
+            {person && !matchByPartnerId.has(person.id) && <div className="discover-actions fixed inset-x-0 z-30 flex items-center justify-center gap-3 px-4 md:static md:mt-5 md:px-0">
               <motion.button type="button" whileTap={{ scale: .94 }} onClick={() => triggerSwipe("pass")} aria-label={`Pass on ${person.first_name}`} className="touch-target flex h-14 w-14 items-center justify-center rounded-full border border-white/12 bg-[#16123a] text-2xl text-[#aaa8d0] shadow-[0_10px_28px_rgba(0,0,0,.3)] hover:border-[#b46e82]/50">×</motion.button>
               <div className="vibe-pulse -translate-y-2"><motion.button type="button" whileTap={{ scale: .94 }} onClick={() => triggerSwipe("vibe")} aria-label={`Send Garba Vibe to ${person.first_name}`} className="touch-target flex h-[68px] w-[68px] items-center justify-center rounded-full border border-[#ffc83d]/45 bg-[linear-gradient(145deg,#ff2e93,#ff8a00_60%,#ffc83d)] text-2xl text-white shadow-[0_16px_40px_rgba(255,46,147,.28)]">⭐</motion.button></div>
               <motion.button type="button" whileTap={{ scale: .94 }} onClick={() => triggerSwipe("like")} aria-label={`Show interest in ${person.first_name}`} className="touch-target flex h-14 w-14 items-center justify-center rounded-full border border-[#2de2c4]/35 bg-[#123e4a] text-2xl text-[#73f4df] shadow-[0_10px_28px_rgba(0,0,0,.3)] hover:border-[#2de2c4]/60">♥</motion.button>
@@ -432,6 +532,7 @@ export default function Discover() {
       <BottomSheet open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Tune your floor" description="Choose what feels right. You can change these anytime."><div className="space-y-6"><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Branch</p><div className="grid grid-cols-2 gap-2 sm:grid-cols-3"><TogglePill active={filterBranch === "All"} onClick={() => setFilterBranch("All")}>All branches</TogglePill>{BRANCHES.map((branch) => <TogglePill key={branch} active={filterBranch === branch} onClick={() => setFilterBranch(branch)}>{branch}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Year</p><div className="grid grid-cols-5 gap-2"><TogglePill active={filterYear === "All"} onClick={() => setFilterYear("All")}>All</TogglePill>{[1, 2, 3, 4].map((year) => <TogglePill key={year} active={filterYear === year} onClick={() => setFilterYear(year)}>{year}{year === 1 ? "st" : year === 2 ? "nd" : year === 3 ? "rd" : "th"}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Style</p><div className="flex flex-wrap gap-2"><TogglePill active={filterStyle === "All"} onClick={() => setFilterStyle("All")}>All styles</TogglePill>{STYLE_OPTIONS.map((style) => <TogglePill key={style} active={filterStyle === style} onClick={() => setFilterStyle(style)}>{style}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Experience</p><div className="flex flex-wrap gap-2"><TogglePill active={filterExperience === "All"} onClick={() => setFilterExperience("All")}>Everyone</TogglePill>{EXPERIENCE_OPTIONS.map((experience) => <TogglePill key={experience} active={filterExperience === experience} onClick={() => setFilterExperience(experience)}>{experience}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Navratri night</p><div className="grid grid-cols-5 gap-2 sm:grid-cols-9">{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((night) => <TogglePill key={night} active={filterNight === night} onClick={() => setFilterNight(filterNight === night ? "All" : night)}>D{night}</TogglePill>)}</div></div><button type="button" onClick={() => setOnlyMyNights((current) => !current)} aria-pressed={onlyMyNights} className={cn("flex min-h-14 w-full items-center justify-between rounded-2xl border px-4 text-left text-xs font-bold", onlyMyNights ? "border-[#ffc83d]/50 bg-[#ffc83d]/10 text-[#ffe49a]" : "border-white/10 bg-white/[0.04] text-[#cbc9e8]")}><span><span className="block">Only people on my nights</span><span className="mt-1 block text-[10px] font-normal text-[#aaa8d0]">Show profiles with at least one shared Navratri night.</span></span><span className="text-lg">{onlyMyNights ? "✓" : "○"}</span></button><div className="flex items-center justify-between border-t border-white/10 pt-4"><span className="text-xs text-[#aaa8d0]">{filteredProfiles.length} profiles match</span><div className="flex gap-2"><Button variant="ghost" className="min-h-11 px-4 text-xs" onClick={resetFilters}>Reset</Button><Button className="min-h-11 px-5 text-xs" onClick={() => setFiltersOpen(false)}>Apply filters</Button></div></div></div></BottomSheet>
 
       {renderMatchModal}
+      {(tutorialOpen || howItWorksOpen) && !matchPopup && <TutorialBoundary onError={()=>void closeTutorial("error")}><DiscoverTutorial onClose={(reason)=>void closeTutorial(reason)} /></TutorialBoundary>}
     </AppShell>
   );
 }
