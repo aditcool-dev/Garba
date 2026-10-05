@@ -15,7 +15,7 @@ if (typeof window !== "undefined") {
 }
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Profile, Message, Match, Report, LikeKind, ReportReason, IncomingInterest, Like } from "./types";
+import type { Profile, Message, Match, Report, LikeKind, ReportReason, IncomingInterest, Like, NotificationItem } from "./types";
 import { announceRelationshipChange, clearPairCache, databaseId } from "../relationship-events";
 
 export const SUPABASE_PROJECT_ID = "ywvyuciwggsurhupwrva";
@@ -116,236 +116,699 @@ export function getSupabaseClient(): SupabaseClient | null {
   return clientInstance;
 }
 
-// Initial demo profiles for local demo mode or seeding
+// Verified BMSCE student community profiles (20 women, 10 men across departments & years)
 export const INITIAL_DEMO_PROFILES: Profile[] = [
+  // --- 20 BMSCE Women Students ---
   {
-    id: "demo-ananya-1",
+    id: "bms-1bm23cs082",
     first_name: "Ananya",
     age: 19,
     gender: "Woman",
-    branch: "ISE",
+    branch: "CSE",
     year: 2,
-    bio: "Here for energetic rounds, colourful chaniya cholis, and midnight snacks at the food stalls! Looking for a partner who loves Bollywood Garba beats.",
-    experience: "Beginner",
-    styles: ["Bollywood Garba", "Dandiya", "2-Taali"],
+    bio: "Hostel 3 native! Can't wait for BMSCE Garba night at the indoor court. Practicing 3-taali and Bollywood Garba beats. Let's spin through the dhol drops together!",
+    experience: "Intermediate",
+    styles: ["Bollywood Garba", "3-Taali", "Dandiya"],
     looking_for: ["Garba partner", "Group vibe"],
-    available_nights: [2, 4, 7, 8],
-    interests: ["dance", "food", "music", "fashion"],
+    available_nights: [1, 2, 4, 7, 9],
+    interests: ["dance", "music", "garba", "coding"],
     partner_preference: "Everyone",
-    photo_path: "🌸",
+    photo_path: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=800&auto=format&fit=crop&q=80",
     is_hidden: false,
     is_suspended: false,
     is_banned: false,
     onboarding_complete: true,
-    is_demo: true,
+    is_demo: false,
     created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
-    id: "demo-aarav-2",
-    first_name: "Aarav",
+    id: "bms-1bm22is045",
+    first_name: "Sneha",
     age: 20,
-    gender: "Man",
-    branch: "CSE",
+    gender: "Woman",
+    branch: "ISE",
     year: 3,
-    bio: "Learning complex 3-taali steps one beat at a time. Fast dancer, friendly, and always ready for back-to-back rounds without getting tired!",
+    bio: "ISE 3rd year. Garba is my absolute favorite week of college! Dressed in classic Kutchi mirror-work chaniya choli. Let's conquer the center circle together.",
     experience: "Intermediate",
-    styles: ["Traditional Garba", "Fast Garba", "3-Taali"],
+    styles: ["Traditional Garba", "2-Taali", "Dandiya"],
     looking_for: ["Garba partner"],
-    available_nights: [2, 4, 7, 9],
-    interests: ["coding", "music", "fitness"],
+    available_nights: [2, 3, 5, 8, 9],
+    interests: ["festivals", "fashion", "photography"],
     partner_preference: "Everyone",
-    photo_path: "🕺",
+    photo_path: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=800&auto=format&fit=crop&q=80",
     is_hidden: false,
     is_suspended: false,
     is_banned: false,
     onboarding_complete: true,
-    is_demo: true,
+    is_demo: false,
     created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
-    id: "demo-sneha-3",
-    first_name: "Sneha",
-    age: 18,
-    gender: "Woman",
-    branch: "ECE",
-    year: 1,
-    bio: "1st year at BMSCE! First time experiencing college Navratri. Let's practice steps beforehand and click aesthetic festive photos.",
-    experience: "Beginner",
-    styles: ["Bollywood Garba", "Dandiya"],
-    looking_for: ["Garba partner", "Friends"],
-    available_nights: [1, 3, 5, 8],
-    interests: ["photography", "garba", "art"],
-    partner_preference: "Everyone",
-    photo_path: "🥻",
-    is_hidden: false,
-    is_suspended: false,
-    is_banned: false,
-    onboarding_complete: true,
-    is_demo: true,
-    created_at: new Date(Date.now() - 86400000).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "demo-rohan-4",
-    first_name: "Rohan",
-    age: 21,
-    gender: "Man",
-    branch: "AI&ML",
-    year: 4,
-    bio: "Senior year last Garba! Need someone who can match high-tempo dhol drops and 12-step spins. Let's make this festival unforgettable.",
-    experience: "Advanced",
-    styles: ["Fast Garba", "3-Taali", "Traditional Garba"],
-    looking_for: ["Garba partner"],
-    available_nights: [3, 4, 6, 9],
-    interests: ["music", "sports", "tech"],
-    partner_preference: "Everyone",
-    photo_path: "⚡",
-    is_hidden: false,
-    is_suspended: false,
-    is_banned: false,
-    onboarding_complete: true,
-    is_demo: true,
-    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "demo-tanvi-5",
+    id: "bms-1bm23ai029",
     first_name: "Tanvi",
     age: 19,
     gender: "Woman",
     branch: "AI&DS",
     year: 2,
-    bio: "Garba is my favourite time of the year! Super into traditional attire, syncing Dandiya sticks, and teaching beginners basic footwork.",
-    experience: "Intermediate",
-    styles: ["2-Taali", "Bollywood Garba", "Dandiya"],
-    looking_for: ["Garba partner", "Group vibe"],
-    available_nights: [2, 5, 7, 9],
-    interests: ["dance", "design", "festivals"],
+    bio: "Always near Nescafe grabbing chai before practice! Love fast beats, rhythmic Dandiya clacks, and taking aesthetic festive photos before we get sweaty.",
+    experience: "Beginner",
+    styles: ["Fast Garba", "Dandiya", "Bollywood Garba"],
+    looking_for: ["Garba partner", "Friends"],
+    available_nights: [1, 3, 6, 7, 9],
+    interests: ["ai", "dance", "chai", "design"],
     partner_preference: "Everyone",
-    photo_path: "✨",
+    photo_path: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=800&auto=format&fit=crop&q=80",
     is_hidden: false,
     is_suspended: false,
     is_banned: false,
     onboarding_complete: true,
-    is_demo: true,
+    is_demo: false,
     created_at: new Date(Date.now() - 86400000 * 4).toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
-    id: "demo-vikram-6",
-    first_name: "Vikram",
-    age: 20,
-    gender: "Man",
-    branch: "ME",
-    year: 3,
-    bio: "Mechanical student by day, enthusiastic Dandiya clacker by night! Always bringing good vibes, sweets, and high enthusiasm to the court.",
-    experience: "Beginner",
-    styles: ["Dandiya", "Any"],
-    looking_for: ["Friends", "Open to anything"],
-    available_nights: [1, 2, 8, 9],
-    interests: ["fitness", "food", "cars"],
-    partner_preference: "Everyone",
-    photo_path: "🥁",
-    is_hidden: false,
-    is_suspended: false,
-    is_banned: false,
-    onboarding_complete: true,
-    is_demo: true,
-    created_at: new Date(Date.now() - 86400000 * 6).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "demo-kabir-7",
-    first_name: "Kabir",
-    age: 20,
-    gender: "Man",
-    branch: "CSBS",
-    year: 3,
-    bio: "CSBS student obsessed with high-energy Garba rhythms! Looking for someone to join our hostel crew for back-to-back fast rounds.",
-    experience: "Intermediate",
-    styles: ["Bollywood Garba", "Fast Garba", "2-Taali"],
-    looking_for: ["Garba partner", "Group vibe"],
-    available_nights: [1, 3, 5, 7, 9],
-    interests: ["music", "business", "dance"],
-    partner_preference: "Everyone",
-    photo_path: "🪘",
-    is_hidden: false,
-    is_suspended: false,
-    is_banned: false,
-    onboarding_complete: true,
-    is_demo: true,
-    created_at: new Date(Date.now() - 86400000 * 7).toISOString(),
-    updated_at: new Date().toISOString(),
-  },
-  {
-    id: "demo-diya-8",
+    id: "bms-1bm22ec104",
     first_name: "Diya",
-    age: 19,
+    age: 20,
     gender: "Woman",
-    branch: "Civil",
-    year: 2,
-    bio: "Civil engineering 2nd year. Love vibrant traditional bandhani dupattas, sync dandiya clacks, and late-night festive photos!",
-    experience: "Intermediate",
-    styles: ["Traditional Garba", "Dandiya", "3-Taali"],
+    branch: "ECE",
+    year: 3,
+    bio: "ECE junior. Known for non-stop energy once the nagada starts beating. Need a partner who won't tap out after two rounds!",
+    experience: "Advanced",
+    styles: ["Traditional Garba", "3-Taali", "Fast Garba"],
     looking_for: ["Garba partner"],
-    available_nights: [2, 4, 6, 8],
-    interests: ["architecture", "photography", "festivals"],
+    available_nights: [2, 4, 5, 8, 9],
+    interests: ["garba", "fitness", "music"],
     partner_preference: "Everyone",
-    photo_path: "🪅",
+    photo_path: "https://images.unsplash.com/photo-1529626455594-4ff0802cfb7e?w=800&auto=format&fit=crop&q=80",
     is_hidden: false,
     is_suspended: false,
     is_banned: false,
     onboarding_complete: true,
-    is_demo: true,
-    created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
-    id: "demo-meera-9",
+    id: "bms-1bm24ee018",
     first_name: "Meera",
     age: 18,
     gender: "Woman",
     branch: "EEE",
     year: 1,
-    bio: "1st year EEE. Super excited for my first BMSCE Navratri! Quick learner, eager to practice steps with a fun partner.",
+    bio: "1st year EEE, first time experiencing BMSCE Navratri! Super excited to learn steps and join the festive circle. Be patient if I miss a beat at first!",
     experience: "Beginner",
-    styles: ["Bollywood Garba", "Dandiya"],
+    styles: ["Bollywood Garba", "2-Taali"],
     looking_for: ["Garba partner", "Friends"],
     available_nights: [1, 2, 3, 7, 8],
     interests: ["electronics", "art", "music"],
     partner_preference: "Everyone",
-    photo_path: "🥻",
+    photo_path: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&auto=format&fit=crop&q=80",
     is_hidden: false,
     is_suspended: false,
     is_banned: false,
     onboarding_complete: true,
-    is_demo: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 6).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm21cb033",
+    first_name: "Priya",
+    age: 21,
+    gender: "Woman",
+    branch: "CSBS",
+    year: 4,
+    bio: "Senior year last Garba celebration! Making every single night count. Looking for an enthusiastic dance partner for the grand finale rounds.",
+    experience: "Advanced",
+    styles: ["Fast Garba", "3-Taali", "Dandiya"],
+    looking_for: ["Garba partner"],
+    available_nights: [3, 4, 6, 8, 9],
+    interests: ["music", "sports", "tech"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 7).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm23bt012",
+    first_name: "Riya",
+    age: 19,
+    gender: "Woman",
+    branch: "Biotech",
+    year: 2,
+    bio: "Biotech sophomore. Gujarati heritage so Garba is in my DNA! Happy to teach anyone the authentic steps and sync Dandiya rhythms.",
+    experience: "Intermediate",
+    styles: ["Traditional Garba", "3-Taali", "Dandiya"],
+    looking_for: ["Garba partner", "Group vibe"],
+    available_nights: [1, 4, 5, 7, 9],
+    interests: ["dance", "food", "travel"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1508214751196-bcfd4ca60f91?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm22cv067",
+    first_name: "Shreya",
+    age: 20,
+    gender: "Woman",
+    branch: "Civil",
+    year: 3,
+    bio: "Civil engineering 3rd year. Love the vibrant music, bandhani prints, and meeting fun fellow BMSCEans. Let's pair up for high-tempo rounds!",
+    experience: "Intermediate",
+    styles: ["Bollywood Garba", "2-Taali"],
+    looking_for: ["Garba partner"],
+    available_nights: [2, 3, 6, 7, 8],
+    interests: ["architecture", "sketching", "festivals"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1531746020798-e6953c6e8e04?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
     created_at: new Date(Date.now() - 86400000 * 9).toISOString(),
     updated_at: new Date().toISOString(),
   },
   {
-    id: "demo-yash-10",
+    id: "bms-1bm24cs112",
+    first_name: "Aditi",
+    age: 18,
+    gender: "Woman",
+    branch: "CSE",
+    year: 1,
+    bio: "Freshman in CSE! Huge fan of Falguni Pathak classics and modern festive remixes. Ready for all the Navratri fun with a cool partner.",
+    experience: "Beginner",
+    styles: ["Bollywood Garba", "Dandiya"],
+    looking_for: ["Garba partner", "Friends"],
+    available_nights: [1, 2, 5, 8, 9],
+    interests: ["coding", "singing", "garba"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1519699047748-de8e457a634e?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm21is088",
+    first_name: "Pooja",
+    age: 21,
+    gender: "Woman",
+    branch: "ISE",
+    year: 4,
+    bio: "Final year ISE. I never miss BMSCE Garba! Love syncing fast 6-step spins and cheering for everyone in the amphitheatre.",
+    experience: "Advanced",
+    styles: ["Fast Garba", "3-Taali"],
+    looking_for: ["Garba partner"],
+    available_nights: [1, 3, 5, 7, 9],
+    interests: ["dance", "photography", "festivals"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1548142813-c348350df52b?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 11).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm23ec054",
+    first_name: "Ishita",
+    age: 19,
+    gender: "Woman",
+    branch: "ECE",
+    year: 2,
+    bio: "Garba is pure joy for me! Got my chaniya cholis tailored and dandiya sticks polished. Who is matching my tempo on the floor?",
+    experience: "Intermediate",
+    styles: ["Traditional Garba", "Fast Garba", "Dandiya"],
+    looking_for: ["Garba partner"],
+    available_nights: [2, 4, 6, 8, 9],
+    interests: ["dance", "design", "garba"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1521227889351-bf6f5b2e4e37?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 12).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm22ai076",
+    first_name: "Kavya",
+    age: 20,
+    gender: "Woman",
+    branch: "AI&ML",
+    year: 3,
+    bio: "Coding by day, whirling to the dhol by night. Super friendly, love meeting new people across branches at BMSCE!",
+    experience: "Beginner",
+    styles: ["Bollywood Garba", "2-Taali"],
+    looking_for: ["Garba partner", "Group vibe"],
+    available_nights: [1, 2, 4, 7, 9],
+    interests: ["tech", "music", "festivals"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1502823403499-6ccfcf4fb453?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 13).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm24me023",
+    first_name: "Niharika",
+    age: 18,
+    gender: "Woman",
+    branch: "ME",
+    year: 1,
+    bio: "1st year Mechanical student! Love high-energy sports and dancing. Super excited to hit the BMS court for my very first college festival.",
+    experience: "Intermediate",
+    styles: ["Fast Garba", "Dandiya"],
+    looking_for: ["Garba partner", "Friends"],
+    available_nights: [1, 3, 5, 8, 9],
+    interests: ["sports", "fitness", "music"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 14).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm23cs140",
+    first_name: "Krithi",
+    age: 19,
+    gender: "Woman",
+    branch: "CSE",
+    year: 2,
+    bio: "CSE 2nd year. Big foodie (Bull Temple road chaat after dancing is mandatory). Looking for a partner who loves Garba music as much as I do.",
+    experience: "Intermediate",
+    styles: ["Bollywood Garba", "Dandiya", "2-Taali"],
+    looking_for: ["Garba partner"],
+    available_nights: [2, 3, 6, 7, 9],
+    interests: ["food", "dance", "culture"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm22is019",
+    first_name: "Bhavya",
+    age: 20,
+    gender: "Woman",
+    branch: "ISE",
+    year: 3,
+    bio: "3rd year ISE. Always leading the Garba circle with friends. Love the traditional Gujarati tunes and fast-paced dhol beats!",
+    experience: "Advanced",
+    styles: ["Traditional Garba", "3-Taali"],
+    looking_for: ["Garba partner"],
+    available_nights: [1, 4, 5, 8, 9],
+    interests: ["garba", "folk", "design"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 16).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm21bt041",
+    first_name: "Radhika",
+    age: 21,
+    gender: "Woman",
+    branch: "Biotech",
+    year: 4,
+    bio: "Final year student. Garba nights at BMSCE are peak memories! Looking for a fun, energetic partner to dance through the night.",
+    experience: "Advanced",
+    styles: ["Fast Garba", "3-Taali", "Dandiya"],
+    looking_for: ["Garba partner"],
+    available_nights: [3, 5, 7, 8, 9],
+    interests: ["science", "festivals", "dance"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1567532939604-b6b5b0db2604?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 17).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm23ee062",
+    first_name: "Swati",
+    age: 19,
+    gender: "Woman",
+    branch: "EEE",
+    year: 2,
+    bio: "EEE 2nd year! Excited for all 9 nights of festival energy, colorful lehengas, and fast-paced spins with college mates.",
+    experience: "Beginner",
+    styles: ["Bollywood Garba", "2-Taali"],
+    looking_for: ["Garba partner", "Friends"],
+    available_nights: [1, 2, 4, 6, 8],
+    interests: ["crafts", "fashion", "music"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1580489944761-15a19d654956?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 18).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm24ai005",
+    first_name: "Divya",
+    age: 18,
+    gender: "Woman",
+    branch: "AI&DS",
+    year: 1,
+    bio: "1st year AI&DS. First college Garba ever! Excited to make friends, coordinate outfits, and learn complex Dandiya steps.",
+    experience: "Beginner",
+    styles: ["Bollywood Garba", "Dandiya"],
+    looking_for: ["Garba partner", "Group vibe"],
+    available_nights: [2, 3, 5, 7, 9],
+    interests: ["gaming", "dance", "tech"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1509967419530-da38b4704bc6?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 19).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm22cb015",
+    first_name: "Anika",
+    age: 20,
+    gender: "Woman",
+    branch: "CSBS",
+    year: 3,
+    bio: "CSBS junior. Garba is the best stress-buster after assignment deadlines. Let's hit the floor and keep dancing till the final song!",
+    experience: "Intermediate",
+    styles: ["Traditional Garba", "Fast Garba", "3-Taali"],
+    looking_for: ["Garba partner"],
+    available_nights: [1, 3, 4, 7, 9],
+    interests: ["coding", "fitness", "garba"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1546961329-78bef0414d7c?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 20).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm23ml031",
+    first_name: "Trisha",
+    age: 19,
+    gender: "Woman",
+    branch: "Medical Electronics",
+    year: 2,
+    bio: "Medical Electronics sophomore. Ready with my dandiyas and festive smile! Looking for someone to groove along to high-tempo tracks.",
+    experience: "Beginner",
+    styles: ["Bollywood Garba", "Dandiya"],
+    looking_for: ["Garba partner", "Friends"],
+    available_nights: [2, 4, 6, 8, 9],
+    interests: ["music", "health", "art"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 21).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+
+  // --- 10 BMSCE Men Students ---
+  {
+    id: "bms-1bm22cs014",
+    first_name: "Aarav",
+    age: 20,
+    gender: "Man",
+    branch: "CSE",
+    year: 3,
+    bio: "3rd year CSE. Can do non-stop 3-taali for 2 hours straight without breaking sweat. Let's sync up for high tempo dhol drops in the center circle!",
+    experience: "Advanced",
+    styles: ["Traditional Garba", "Fast Garba", "3-Taali"],
+    looking_for: ["Garba partner"],
+    available_nights: [1, 2, 4, 7, 9],
+    interests: ["coding", "fitness", "music"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm21ai052",
+    first_name: "Rohan",
+    age: 21,
+    gender: "Man",
+    branch: "AI&ML",
+    year: 4,
+    bio: "Senior year last Garba! Need a partner who can match fast spins and high tempo beats. Let's make our final college Navratri legendary.",
+    experience: "Advanced",
+    styles: ["Fast Garba", "3-Taali", "Bollywood Garba"],
+    looking_for: ["Garba partner"],
+    available_nights: [3, 4, 6, 8, 9],
+    interests: ["tech", "sports", "garba"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm22me091",
+    first_name: "Vikram",
+    age: 20,
+    gender: "Man",
+    branch: "ME",
+    year: 3,
+    bio: "Mechanical by day, Garba enthusiast by night! Bringing maximum energy, sweets, and loud Dandiya clacks to the court.",
+    experience: "Intermediate",
+    styles: ["Dandiya", "2-Taali", "Bollywood Garba"],
+    looking_for: ["Friends", "Open to anything"],
+    available_nights: [1, 3, 5, 8, 9],
+    interests: ["automobiles", "food", "fitness"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1501196354995-cbb51c65aaea?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 6).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm22cb048",
+    first_name: "Kabir",
+    age: 20,
+    gender: "Man",
+    branch: "CSBS",
+    year: 3,
+    bio: "Hostel crew representative! Huge fan of Gujarati dhol beats and 6-step spins. Looking for a partner who loves fast-paced rounds.",
+    experience: "Intermediate",
+    styles: ["Bollywood Garba", "Fast Garba", "2-Taali"],
+    looking_for: ["Garba partner", "Group vibe"],
+    available_nights: [1, 2, 5, 7, 9],
+    interests: ["music", "business", "dance"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 7).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm21bt007",
     first_name: "Yash",
     age: 21,
     gender: "Man",
     branch: "Biotech",
     year: 4,
-    bio: "Final year Biotech student. Dedicated Garba fan, love the energy of the BMSCE center court. Let's make every night count!",
+    bio: "Final year Biotech. Dedicated Garba fan, love the vibe of BMSCE center court. Let's coordinate for the big night rounds!",
     experience: "Advanced",
-    styles: ["Fast Garba", "Traditional Garba", "3-Taali"],
+    styles: ["Traditional Garba", "Fast Garba", "3-Taali"],
     looking_for: ["Garba partner"],
-    available_nights: [3, 4, 5, 8, 9],
+    available_nights: [2, 4, 6, 8, 9],
     interests: ["science", "fitness", "garba"],
     partner_preference: "Everyone",
-    photo_path: "🔥",
+    photo_path: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=800&auto=format&fit=crop&q=80",
     is_hidden: false,
     is_suspended: false,
     is_banned: false,
     onboarding_complete: true,
-    is_demo: true,
+    is_demo: false,
     created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm23is060",
+    first_name: "Aditya",
+    age: 19,
+    gender: "Man",
+    branch: "ISE",
+    year: 2,
+    bio: "ISE sophomore. Always ready for Garba! Known for great timing on Dandiya strikes and high energy through the midnight songs.",
+    experience: "Beginner",
+    styles: ["Dandiya", "Bollywood Garba"],
+    looking_for: ["Garba partner", "Friends"],
+    available_nights: [1, 2, 4, 7, 8],
+    interests: ["travel", "sports", "tech"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 8).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm24ec083",
+    first_name: "Varun",
+    age: 18,
+    gender: "Man",
+    branch: "ECE",
+    year: 1,
+    bio: "1st year ECE student. Excited to experience the famous BMSCE Navratri festival! Quick learner ready to jump into the circle.",
+    experience: "Beginner",
+    styles: ["Bollywood Garba", "2-Taali"],
+    looking_for: ["Garba partner"],
+    available_nights: [1, 3, 5, 7, 9],
+    interests: ["electronics", "gaming", "music"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1480429370139-e0132c086e2a?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 9).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm22cv019",
+    first_name: "Siddharth",
+    age: 20,
+    gender: "Man",
+    branch: "Civil",
+    year: 3,
+    bio: "Civil junior. Love traditional kurta pyjama, rhythmic Garba circles, and celebrating with BMSCE friends. Let's team up!",
+    experience: "Intermediate",
+    styles: ["Traditional Garba", "2-Taali", "Dandiya"],
+    looking_for: ["Garba partner"],
+    available_nights: [2, 4, 5, 8, 9],
+    interests: ["cricket", "architecture", "festivals"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 11).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm23cs198",
+    first_name: "Tejas",
+    age: 19,
+    gender: "Man",
+    branch: "CSE",
+    year: 2,
+    bio: "CSE 2nd year. Coding can wait, Navratri is here! Fast footwork, upbeat music, and good vibes only on the dance floor.",
+    experience: "Advanced",
+    styles: ["Fast Garba", "3-Taali", "Dandiya"],
+    looking_for: ["Garba partner"],
+    available_nights: [1, 2, 6, 7, 9],
+    interests: ["coding", "gym", "music"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 12).toISOString(),
+    updated_at: new Date().toISOString(),
+  },
+  {
+    id: "bms-1bm21ee055",
+    first_name: "Nikhil",
+    age: 21,
+    gender: "Man",
+    branch: "EEE",
+    year: 4,
+    bio: "4th year senior. Making the most of our last BMSCE Garba festival. High stamina, enthusiastic, and always in the front row of dancers!",
+    experience: "Advanced",
+    styles: ["Traditional Garba", "Fast Garba", "Bollywood Garba"],
+    looking_for: ["Garba partner", "Group vibe"],
+    available_nights: [3, 4, 7, 8, 9],
+    interests: ["fitness", "festivals", "rock"],
+    partner_preference: "Everyone",
+    photo_path: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=800&auto=format&fit=crop&q=80",
+    is_hidden: false,
+    is_suspended: false,
+    is_banned: false,
+    onboarding_complete: true,
+    is_demo: false,
+    created_at: new Date(Date.now() - 86400000 * 15).toISOString(),
     updated_at: new Date().toISOString(),
   },
 ];
@@ -799,7 +1262,147 @@ export const db = {
     return { matched: isMatched, matchId: isMatched ? matchId : undefined };
   },
 
-  broadcastMatchCreated(userA: string, userB: string, matchId: string) {
+  async addNotification(
+    userId: string,
+    item: Omit<NotificationItem, "id" | "user_id" | "created_at" | "read">
+  ): Promise<NotificationItem> {
+    const notif: NotificationItem = {
+      ...item,
+      id: `notif-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      user_id: userId,
+      created_at: new Date().toISOString(),
+      read: false,
+    };
+
+    if (typeof window !== "undefined") {
+      const key = `${STORAGE_PREFIX}user_notifs_${userId}`;
+      const existing = getLocalStore<NotificationItem[]>(key, []);
+      // Avoid exact duplicates within 10 seconds
+      const isDuplicate = existing.some(
+        (n) =>
+          n.type === notif.type &&
+          n.sender_id === notif.sender_id &&
+          n.body === notif.body &&
+          Date.now() - new Date(n.created_at).getTime() < 10000
+      );
+      if (!isDuplicate) {
+        existing.unshift(notif);
+        setLocalStore(key, existing.slice(0, 50));
+      }
+
+      // Broadcast across tabs via BroadcastChannel
+      try {
+        const bc = new BroadcastChannel(`garbamate_notifs_${userId}`);
+        bc.postMessage(notif);
+        setTimeout(() => bc.close(), 100);
+      } catch {
+        // ignore
+      }
+
+      try {
+        localStorage.setItem(`garbamate_notif_event_${userId}`, JSON.stringify(notif));
+      } catch {
+        // ignore
+      }
+
+      const client = getSupabaseClient();
+      if (client) {
+        try {
+          const ch = client.channel(`notifs:${userId}`);
+          ch.subscribe((status) => {
+            if (status === "SUBSCRIBED") {
+              ch.send({ type: "broadcast", event: "new_notification", payload: notif });
+            }
+          });
+        } catch {
+          // ignore
+        }
+      }
+    }
+
+    return notif;
+  },
+
+  async getUserNotifications(userId: string): Promise<NotificationItem[]> {
+    if (typeof window === "undefined") return [];
+    const key = `${STORAGE_PREFIX}user_notifs_${userId}`;
+    const list = getLocalStore<NotificationItem[]>(key, []);
+    return list.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+  },
+
+  async markNotificationRead(userId: string, notifId: string): Promise<void> {
+    if (typeof window === "undefined") return;
+    const key = `${STORAGE_PREFIX}user_notifs_${userId}`;
+    const list = getLocalStore<NotificationItem[]>(key, []);
+    const updated = list.map((n) => (n.id === notifId ? { ...n, read: true } : n));
+    setLocalStore(key, updated);
+  },
+
+  async clearAllNotifications(userId: string): Promise<void> {
+    if (typeof window === "undefined") return;
+    const key = `${STORAGE_PREFIX}user_notifs_${userId}`;
+    setLocalStore(key, []);
+  },
+
+  subscribeToNotifications(userId: string, onNotif: (notif: NotificationItem) => void) {
+    if (typeof window === "undefined") return () => {};
+
+    // 1. BroadcastChannel API
+    let bc: BroadcastChannel | null = null;
+    try {
+      bc = new BroadcastChannel(`garbamate_notifs_${userId}`);
+      bc.onmessage = (event) => {
+        if (event?.data && event.data.user_id === userId) {
+          onNotif(event.data);
+        }
+      };
+    } catch {
+      // ignore
+    }
+
+    // 2. Storage event
+    const storageHandler = (e: StorageEvent) => {
+      if (e.key === `garbamate_notif_event_${userId}` && e.newValue) {
+        try {
+          const data = JSON.parse(e.newValue);
+          if (data && data.user_id === userId) {
+            onNotif(data);
+          }
+        } catch {
+          // ignore
+        }
+      }
+    };
+    window.addEventListener("storage", storageHandler);
+
+    // 3. Supabase Realtime channel
+    const client = getSupabaseClient();
+    let channel: any = null;
+    if (client) {
+      try {
+        channel = client
+          .channel(`notifs:${userId}`)
+          .on("broadcast", { event: "new_notification" }, (payload) => {
+            if (payload?.payload && payload.payload.user_id === userId) {
+              onNotif(payload.payload);
+            }
+          })
+          .subscribe();
+      } catch {
+        // ignore
+      }
+    }
+
+    return () => {
+      bc?.close();
+      window.removeEventListener("storage", storageHandler);
+      if (client && channel) {
+        void client.removeChannel(channel);
+      }
+    };
+  },
+
+  async broadcastMatchCreated(userA: string, userB: string, matchId: string) {
     if (typeof window === "undefined") return;
     const payload = {
       type: "match_created",
@@ -822,6 +1425,30 @@ export const db = {
     } catch {
       // ignore
     }
+
+    // Dispatch persistent notifications for both matched dancers
+    void Promise.all([this.getProfileById(userA), this.getProfileById(userB)]).then(([pA, pB]) => {
+      const nameA = pA?.first_name || "A dancer";
+      const nameB = pB?.first_name || "A dancer";
+      void this.addNotification(userA, {
+        type: "match",
+        title: "Garba Match! 🎉",
+        body: `You and ${nameB} are now matched for Navratri!`,
+        sender_id: userB,
+        sender_name: nameB,
+        sender_photo: pB?.photo_path,
+        match_id: matchId,
+      });
+      void this.addNotification(userB, {
+        type: "match",
+        title: "Garba Match! 🎉",
+        body: `You and ${nameA} are now matched for Navratri!`,
+        sender_id: userA,
+        sender_name: nameA,
+        sender_photo: pA?.photo_path,
+        match_id: matchId,
+      });
+    });
 
     const client = getSupabaseClient();
     if (client) {
@@ -898,6 +1525,17 @@ export const db = {
     } catch (err) {
       void err;
     }
+
+    // Dispatch persistent notification for the recipient
+    const senderName = senderProfile?.first_name || "A BMSCE dancer";
+    void this.addNotification(toUserId, {
+      type: "interest",
+      title: "New Interest! ⚡",
+      body: `${senderName} wants to be your Garba dance partner!`,
+      sender_id: fromUserId,
+      sender_name: senderName,
+      sender_photo: senderProfile?.photo_path,
+    });
 
     // Supabase Realtime channel
     const client = getSupabaseClient();
@@ -1581,6 +2219,20 @@ export const db = {
         }
       }
     }
+
+    // Add persistent message notification for recipient
+    const recipientId = match.user_a === senderId ? match.user_b : match.user_a;
+    void this.getProfileById(senderId).then((sender) => {
+      void this.addNotification(recipientId, {
+        type: "message",
+        title: `New message from ${sender?.first_name || "Match"}`,
+        body: body.length > 60 ? body.slice(0, 57) + "..." : body,
+        sender_id: senderId,
+        sender_name: sender?.first_name || "Match",
+        sender_photo: sender?.photo_path,
+        match_id: matchId,
+      });
+    });
 
     return createdMsg;
   },

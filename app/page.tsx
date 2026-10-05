@@ -43,24 +43,10 @@ const SAMPLE_CARDS: SampleCard[] = [
   },
 ];
 
-function getCountdownLabel(): string {
-  const target = Date.parse(FESTIVAL.startDate);
-  const remaining = target - Date.now();
-
-  if (!Number.isFinite(target)) return `${FESTIVAL.nights} nights of Garba`;
-  if (remaining <= 0) return `${FESTIVAL.name} is live`;
-
-  const totalMinutes = Math.floor(remaining / 60000);
-  const days = Math.floor(totalMinutes / (60 * 24));
-  const hours = Math.floor((totalMinutes % (60 * 24)) / 60);
-  return `${days}d ${String(hours).padStart(2, "0")}h to go`;
-}
-
 export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
   const [tapCount, setTapCount] = useState(0);
-  const [countdown, setCountdown] = useState<string | null>(null);
 
   useEffect(() => {
     if (typeof window !== "undefined") {
@@ -70,13 +56,6 @@ export default function Home() {
       }
     }
   }, [router]);
-
-  useEffect(() => {
-    const update = () => setCountdown(getCountdownLabel());
-    update();
-    const timer = window.setInterval(update, 60000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   const handleSecretTap = (e: React.MouseEvent) => {
     const next = tapCount + 1;
@@ -188,7 +167,7 @@ export default function Home() {
                 <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">The floor opens soon</p>
                 <h2 className="display-font mt-1 text-xl font-bold text-white">{FESTIVAL.name} 2026</h2>
               </div>
-              <span className="rounded-full bg-[#ffd166]/10 px-2.5 py-1 text-[10px] font-bold text-[#ffdca0]">{countdown || `${FESTIVAL.nights} nights`}</span>
+              <span className="rounded-full bg-[#ffd166]/10 px-2.5 py-1 text-[10px] font-bold text-[#ffdca0]">{`${FESTIVAL.nights} nights · BMSCE`}</span>
             </div>
             <div className="mt-4 grid grid-cols-3 gap-2 text-center">
               <div className="rounded-2xl border border-white/10 bg-black/10 px-2 py-2.5"><b className="display-font text-lg text-[#ffd166]">9</b><p className="text-[10px] text-[#aaa8d0]">nights</p></div>

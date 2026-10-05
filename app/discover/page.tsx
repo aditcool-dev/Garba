@@ -168,7 +168,7 @@ export default function Discover() {
     const demoEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_DATA === "true";
     if (!user) {
       const publicNames = await db.getPublicProfileNames();
-      const safeNames = publicNames.length ? publicNames.map((entry) => entry.first_name) : demoEnabled ? INITIAL_DEMO_PROFILES.map((entry) => entry.first_name) : [];
+      const safeNames = publicNames.length ? publicNames.map((entry) => entry.first_name) : INITIAL_DEMO_PROFILES.map((entry) => entry.first_name);
       setGuestNames(safeNames);
       setProfiles([]);
       setIndex(0);
