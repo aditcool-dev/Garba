@@ -22,6 +22,7 @@ export interface Profile {
   is_banned: boolean;
   onboarding_complete: boolean;
   is_demo: boolean;
+  is_verified?: boolean;
   has_seen_discover_tutorial?: boolean;
   last_active_at?: string;
   created_at: string;
@@ -64,6 +65,7 @@ export interface Message {
   body: string;
   created_at: string;
   read_at: string | null;
+  chat_started_at?: string;
 }
 
 export interface Report {
@@ -104,4 +106,5 @@ export interface NotificationItem {
   match_id?: string;
   created_at: string;
   read: boolean;
+  unread_count?: number;
 }

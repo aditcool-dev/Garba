@@ -1,7 +1,7 @@
 import type { Profile } from "@/lib/supabase/types";
 
 export const TUTORIAL_COPY = {
-  skip: "Skip tutorial", next: "Next", back: "Back", start: "Start discovering", try: "Try it", practice: "Practice card — no decisions are sent", like: "Interested", pass: "Pass", vibe: "Garba Vibe", steps: "Tutorial steps", demo: "Demo only", shortcuts: "Keyboard: ← → ↑", instructions: "Use arrows or Enter to continue. Esc skips.",
+  skip: "Skip tutorial", next: "Next", back: "Back", start: "Start discovering", try: "Try it", practice: "Practice card — no decisions are sent", like: "Interested", pass: "Pass", vibe: "Garba Vibe", steps: "Tutorial steps", demo: "Practice only", shortcuts: "Keyboard: ← → ↑", instructions: "Use arrows or Enter to continue. Esc skips.",
   stepsContent: [
     { title: "Welcome to the floor 🪩", text: "Welcome to GarbaMate 🪩. Find your Garba partner in 4 quick moves." },
     { title: "Interested →", text: "Swipe right (or tap ❤️) if you'd like to dance together." },
@@ -17,6 +17,6 @@ export const TUTORIAL_COPY = {
 };
 
 export const TUTORIAL_PROFILE: Profile = {
-  id: "tutorial-demo-only", first_name: "Demo Dancer", age: 20, gender: "Prefer not to say", branch: "BMSCE", year: 2,
+  id: "tutorial-practice-only", first_name: "Practice Dancer", age: 20, gender: "Prefer not to say", branch: "BMSCE", year: 2,
   bio: "Practice only. No likes, passes, matches or quotas change.", experience: "Beginner", styles: ["Dandiya", "Traditional Garba"], looking_for: ["Garba partner"], available_nights: [1,2,4,7,9], interests: ["dance"], partner_preference: "Everyone", photo_path: null, is_hidden: false, is_suspended: false, is_banned: false, onboarding_complete: true, is_demo: true, created_at: "2026-01-01", updated_at: "2026-01-01",
 };

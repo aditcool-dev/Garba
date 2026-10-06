@@ -1,8 +1,6 @@
 \set ON_ERROR_STOP on
 -- Run against an isolated PostgreSQL database with Supabase auth.uid()/roles and
 -- migrations 001–009 applied. Uses real RLS, RPCs and transactions, not mocks.
-grant all on all tables in schema public to authenticated;
-grant usage on all sequences in schema public to authenticated;
 insert into auth.users(id,email) values
  ('00000000-0000-4000-8000-000000000001','a.cs24@bmsce.ac.in'),
  ('00000000-0000-4000-8000-000000000002','b.cs24@bmsce.ac.in'),
@@ -15,6 +13,11 @@ set request.jwt.claim.sub='00000000-0000-4000-8000-000000000002';
 select public.like_user('00000000-0000-4000-8000-000000000001');
 select id as match_id,chat_started_at as first_generation from public.matches where user_b=auth.uid() \gset
 insert into public.messages(match_id,sender_id,body,chat_started_at) values(:'match_id',auth.uid(),'OLD EVIDENCE',:'first_generation');
+-- Model a postdated legacy row: timestamp filtering alone would let this old
+-- message reappear after a rematch. Its generation token must remain decisive.
+reset role;
+update public.messages set created_at='2099-01-01' where match_id=:'match_id';
+set role authenticated;
 insert into public.passes(from_user,to_user) values(auth.uid(),'00000000-0000-4000-8000-000000000001');
 \set report_id '00000000-0000-4000-8000-000000000010'
 insert into public.reports(id,reporter_id,reported_user_id,reason,description) values(:'report_id',auth.uid(),'00000000-0000-4000-8000-000000000001','other','Prior chat report');

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Card } from "@/components/ui";
 import { useAuth } from "@/lib/supabase/auth-context";
-import { getSupabaseClient } from "@/lib/supabase/client";
 
 function GoogleIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
@@ -32,7 +31,7 @@ function GoogleIcon({ className = "w-5 h-5" }: { className?: string }) {
 
 export default function Signup() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithOtp, user } = useAuth();
+  const { signInWithGoogle, signInWithOtp, user, profile } = useAuth();
   const [email, setEmail] = useState("");
   const [linkSent, setLinkSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -54,37 +53,10 @@ export default function Signup() {
 
   // If already logged in, redirect to discover or onboarding
   useEffect(() => {
-    if (user) {
-      router.push("/discover");
+    if (user && profile?.id === user.id) {
+      router.push(profile.onboarding_complete ? "/discover" : "/onboarding");
     }
-  }, [user, router]);
-
-  // When link is sent, listen for session established from the email link in another tab or same browser
-  useEffect(() => {
-    if (!linkSent) return;
-
-    const interval = setInterval(async () => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data } = await client.auth.getSession();
-        if (data?.session?.user) {
-          router.push("/onboarding");
-        }
-      }
-    }, 1500);
-
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === "garbamate_auth_session" && e.newValue) {
-        router.push("/onboarding");
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, [linkSent, router]);
+  }, [user, profile, router]);
 
   const handleGoogle = async () => {
     setGoogleLoading(true);

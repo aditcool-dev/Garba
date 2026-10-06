@@ -32,7 +32,7 @@ export function IllustratedProfileVisual({ person, className, priority = false }
         <Image src={person.photo_path!} alt={`${person.first_name}'s profile`} fill sizes={PROFILE_SIZES} quality={75} unoptimized={!optimizableImage(person.photo_path!)} priority={priority} decoding="async" draggable={false} className="object-cover object-center" />
       ) : (
         <div className={cn("relative flex h-full w-full items-center justify-center bg-gradient-to-br", gradient)}>
-           <span aria-hidden="true" className="display-font absolute top-[12%] text-8xl font-bold tracking-[-0.08em] text-white/35 sm:text-9xl">{initials(person.first_name)}</span>
+           <span aria-hidden="true" className="display-font absolute top-[12%] text-8xl font-bold tracking-[-0.08em] text-white/70 sm:text-9xl">{person.photo_path || initials(person.first_name)}</span>
         </div>
       )}
     </div>
@@ -68,7 +68,7 @@ export const DiscoverProfileCard = memo(function DiscoverProfileCard({ person, s
       </div>
 
       <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4 sm:p-5">
-        <VerifiedBadge className="rounded-full border border-[#2de2c4]/25 bg-[#071c22] px-2.5 py-1 text-[10px]" />
+        {person.is_verified && <VerifiedBadge className="rounded-full border border-[#2de2c4]/25 bg-[#071c22] px-2.5 py-1 text-[10px]" />}
         <div className="rounded-full border border-white/15 bg-[#0a0820] p-1" title="A fun app-generated score based on nights, styles, and interests.">
           <ScoreRing score={score} size="sm" label="Garba compatibility" />
         </div>

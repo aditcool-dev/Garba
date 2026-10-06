@@ -25,15 +25,19 @@ export function RelationshipsProvider({ children }: { children: React.ReactNode 
   const pending = useRef(new Map<string, Promise<void>>());
   const suppressed = useRef(new Set<string>());
   const request = useRef(0);
+  const snapshot = useRef("");
   const refetch = useCallback(async () => {
     const ticket = ++request.current;
     if (!user) { setMatches([]); setLoading(false); return; }
     try {
       const [rows, blocked] = await Promise.all([db.getMatches(user.id), db.getBlockedUserIds(user.id)]);
       if (ticket !== request.current) return;
-      setMatches(rows.filter((match) => match.status === "active" && !pending.current.has(match.id) && !blocked.has(match.user_a === user.id ? match.user_b : match.user_a)));
+      const active=rows.filter((match) => match.status === "active" && !pending.current.has(match.id) && !blocked.has(match.user_a === user.id ? match.user_b : match.user_a));
+      const signature=`${user.id}:${active.map(match=>`${match.id}:${match.chat_started_at}`).sort().join(",")}`;
+      if(snapshot.current!==signature){snapshot.current=signature;setRevision(value=>value+1);}
+      setMatches(active);
       setError(null);
-    } catch { if (ticket === request.current) setError("Couldn’t update your matches. Please retry."); }
+    } catch (error) { console.error("[relationships] refresh", error); if (ticket === request.current) setError("Couldn’t update your matches. Please retry."); }
     finally { if (ticket === request.current) setLoading(false); }
   }, [user]);
 
@@ -58,7 +62,10 @@ export function RelationshipsProvider({ children }: { children: React.ReactNode 
     const interests = db.subscribeToInterests(user.id, () => changed());
     const focus = () => { void refetch(); setRevision((value) => value + 1); };
     window.addEventListener("focus", focus);
-    return () => { ++request.current; unsubscribe(); interests(); window.removeEventListener("focus", focus); window.removeEventListener(RELATIONSHIPS_CHANGED, local); };
+    // A block can hide a row from Realtime's RLS check before its update reaches
+    // the other participant. Poll authoritative state while the tab is visible.
+    const timer=setInterval(()=>{if(document.visibilityState==="visible")void refetch();},5000);
+    return () => { ++request.current; clearInterval(timer); unsubscribe(); interests(); window.removeEventListener("focus", focus); window.removeEventListener(RELATIONSHIPS_CHANGED, local); };
   }, [user, refetch]);
 
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);

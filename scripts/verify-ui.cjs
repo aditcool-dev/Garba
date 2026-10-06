@@ -16,6 +16,9 @@ async function fixture(context, { reciprocal = false, failSnapshot = false } = {
   const passes = [];
   const matches = [];
   await context.routeWebSocket('**/*.supabase.co/**', socket => socket.close());
+  const account={id:me.id,email:'viewer.cs24@bmsce.ac.in',email_confirmed_at:new Date().toISOString(),app_metadata:{provider:'email'},user_metadata:{},aud:'authenticated'};
+  const token=[{alg:'HS256',typ:'JWT'},{sub:me.id,role:'authenticated',aud:'authenticated',exp:Math.floor(Date.now()/1000)+3600},'fixture'].map(part=>typeof part==='string'?part:Buffer.from(JSON.stringify(part)).toString('base64url')).join('.');
+  await context.addCookies([{name:'sb-health-auth-token',value:'base64-'+Buffer.from(JSON.stringify({access_token:token,refresh_token:'fixture',expires_at:Math.floor(Date.now()/1000)+3600,expires_in:3600,token_type:'bearer',user:account})).toString('base64url'),url:base}]);
   await context.addInitScript(({me, profiles}) => {
     sessionStorage.setItem('garbamate_cleaned_demo_v1', 'true');
     localStorage.setItem('garbamate_auth_session', JSON.stringify({id:me.id,email:'viewer.cs24@bmsce.ac.in'}));
@@ -44,6 +47,7 @@ async function fixture(context, { reciprocal = false, failSnapshot = false } = {
     const url = new URL(request.url());
     const method = request.method();
     const table = url.pathname.split('/').pop();
+    if(url.pathname.includes('/auth/v1/')){await route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(account)});return;}
     const eq = key => (url.searchParams.get(key) || '').replace(/^eq\./,'');
     const match = row => ['from_user','to_user'].every(k => !eq(k) || row[k] === eq(k));
     let body = [];
@@ -148,6 +152,10 @@ async function touchDrag(page, cdp, direction, commit=true, measure=false) {
       assert(store.likes.some(r=>r.to_user===id));
     }
     if(!process.env.GARBA_SKIP_REPEATS) results.push({check:'20 touch passes + 20 touch likes, direction and mutation, no drag renders',pass:true});
+    // The fixture records a like before the SDK sees its acknowledgement. Wait
+    // for the resulting authoritative feed refresh before injecting pre-pass
+    // history; otherwise that refresh can exclude the just-selected fixture row.
+    if(!process.env.GARBA_SKIP_REPEATS){await discover.getByRole('button',{name:/^All\s*30$/}).waitFor();await discover.waitForLoadState('networkidle');}
     const passedId=await topId(discover);
     const priorLike={id:'prior-like',from_user:me.id,to_user:passedId,kind:'interested',created_at:'2026-01-01T00:00:00Z'};
     store.likes.push(priorLike);
@@ -189,6 +197,10 @@ async function touchDrag(page, cdp, direction, commit=true, measure=false) {
     assert.equal(night.count,9);assert.equal(night.scroll,night.width);
     await discover.screenshot({path:path.join(artifacts,'discover-mobile.png'),fullPage:true});
     results.push({check:'vertical scroll, mobile action/nav clearance, 9-night non-scrolling row',pass:true});
+    const keyboardPass=await topId(discover);await discover.keyboard.press('ArrowLeft');await waitNext(discover,keyboardPass);
+    const keyboardLike=await topId(discover);await discover.keyboard.press('ArrowRight');await waitNext(discover,keyboardLike);await waitRemoteLike(keyboardLike);
+    const keyboardQuota=await topId(discover);await discover.keyboard.press('ArrowUp');await discover.getByText('Your 3 Garba Vibes for today are used up ✨').waitFor();await discover.waitForTimeout(350);assert.equal(await topId(discover),keyboardQuota);
+    results.push({check:'Discover keyboard left/right actions and upward Vibe quota guard',pass:true});
     // Record a trace at 4x CPU; frame intervals and render hook are measured during an uncommitted drag.
     await session.send('Emulation.setCPUThrottlingRate',{rate:4});
     await session.send('Tracing.start',{categories:'devtools.timeline,v8,blink.user_timing,disabled-by-default-devtools.timeline',transferMode:'ReturnAsStream'});
@@ -207,5 +219,6 @@ async function touchDrag(page, cdp, direction, commit=true, measure=false) {
     await desktopPage.getByRole('button',{name:/^Show interest in /}).click();await desktopPage.getByRole('dialog',{name:"It's a Garba Match!"}).waitFor();assert(await desktopPage.getByRole('link').filter({hasText:'Say hello'}).getAttribute('href')==='/chat/test-match');
     results.push({check:'desktop all 9 nights + reciprocal match/chat target',pass:true});await desktop.close();
     const reduced=await browser.newContext({viewport:{width:390,height:844},reducedMotion:'reduce'});await fixture(reduced,{failSnapshot:true});const rp=await reduced.newPage();await rp.goto(`${base}/discover`);await rp.locator('[data-top-card="true"]').waitFor();const passed=await topId(rp);await rp.getByRole('button',{name:/^Pass on /}).last().click();await waitNext(rp,passed);await rp.waitForFunction(id=>JSON.parse(localStorage.getItem('garbamate_passes')||'[]').some(row=>row.to_user===id),passed);const rid=await topId(rp);await rp.getByRole('button',{name:/^Show interest in /}).click();await rp.getByText('Couldn’t save that decision. Please try again.').waitFor();assert.equal(await topId(rp),rid);results.push({check:'reduced-motion fade + failed mutation rollback',pass:true});await reduced.close();
-  } finally {fs.writeFileSync(path.join(artifacts,'verification-results.json'),JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));await browser.close();}
+  } catch(error) { for(const context of browser.contexts())for(const page of context.pages()){console.log('Regression failure:',page.url(),await page.locator('body').innerText());await page.screenshot({path:path.join(artifacts,'ui-health-failure.png')});}throw error; }
+  finally {fs.writeFileSync(path.join(artifacts,'verification-results.json'),JSON.stringify(results,null,2));console.log(JSON.stringify(results,null,2));await browser.close();}
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -27,7 +27,7 @@ function Tutorial({ onClose }: Props) {
   const reduced=useReducedMotion();
   const handle=useRef<SwipeHandle>(null),closing=useRef(false);
   const progress=useMotionValue(0);
-  const person=useMemo(()=>({...TUTORIAL_PROFILE,id:`tutorial-demo-${reset}`}),[reset]);
+  const person=useMemo(()=>({...TUTORIAL_PROFILE,id:`tutorial-practice-${reset}`}),[reset]);
   const finish=useCallback((reason: TutorialCloseReason)=>{if(closing.current)return;closing.current=true;onClose(reason);},[onClose]);
   const go=useCallback((value:number)=>{setStep(Math.max(0,Math.min(8,value)));setPractice(false);setDetails(false);setReset((value)=>value+1);},[]);
   const next=useCallback(()=>{if(step===8)finish("finish");else go(step+1);},[step,finish,go]);

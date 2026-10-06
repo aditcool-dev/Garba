@@ -1,6 +1,8 @@
 # Hero and Discover UI upgrade (initial pass)
 
-These initial-pass notes are retained as history. The follow-up section below documents the current implementation and latest verification.
+**Current health cleanup and deployment contract:** see `HEALTH_CHECK.md` and the health-check section of `DECISIONS.md`. The earlier measurements/limitations below describe historical passes; the current data/auth layer uses verified Supabase sessions, safe Admin API samples, checked remote writes and database-derived unread counts.
+
+The initial-pass and follow-up notes below are retained as history. `HEALTH_CHECK.md` contains the current implementation contract and latest verification.
 
 ## Scope and assumptions
 
@@ -125,7 +127,7 @@ Final browser checks caught two timing bugs. Match celebrations no longer close 
 - `scripts/verify-ui.cjs` is adapted to the new feed/RPC contract and retains the earlier hero geometry, gesture direction, Undo, scroll and reduced-motion regressions.
 - Artifacts are under `/tmp/omnirush`: `followup-results.json`, `followup-swipe-4x-trace.json`, and tutorial screenshots at 360/390/768/1280px, plus the earlier suite's refreshed `verification-results.json` and `swipe-4x-trace.json`.
 
-### Final results — October 5, 2026
+### Follow-up results before the health cleanup — October 5, 2026
 
 | Check | Result |
 | --- | --- |

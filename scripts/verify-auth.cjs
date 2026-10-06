@@ -1,0 +1,23 @@
+const {chromium}=require('@playwright/test'),assert=require('assert/strict'),fs=require('fs');
+const base=process.env.GARBA_TEST_URL||'http://127.0.0.1:3101';
+(async()=>{const browser=await chromium.launch({headless:true,executablePath:process.env.GARBA_CHROME_PATH,args:['--no-sandbox']});const results=[];try{
+  for(const route of ['/signup','/login']){
+    const context=await browser.newContext(),page=await context.newPage(),requests=[];
+    await context.route('**/*.supabase.co/**',async request=>{requests.push({url:request.request().url(),body:request.request().postDataJSON()});await request.fulfill({status:200,contentType:'application/json',body:'{}'});});
+    await page.goto(base+route);await page.locator('input[type=email]').fill('outsider@gmail.com');await page.locator('button[type=submit]').click();await page.getByText('Please use your verified @bmsce.ac.in college email.',{exact:true}).waitFor();assert.equal(requests.filter(r=>r.url.includes('/otp')).length,0);
+    await page.locator('input[type=email]').fill('student.cs24@bmsce.ac.in');await page.locator('button[type=submit]').click();await page.getByText('Check Your Inbox',{exact:true}).waitFor();assert.equal(requests.filter(r=>r.url.includes('/otp')).length,1);assert.equal(requests.find(r=>r.url.includes('/otp')).body.email,'student.cs24@bmsce.ac.in');
+    assert.equal(await page.evaluate(()=>localStorage.getItem('garbamate_local_accounts')),null);results.push({check:`${route}: noncollege rejected without network; college link request succeeds; no stored passwords`,pass:true});await context.close();
+  }
+  const context=await browser.newContext(),page=await context.newPage();await context.route('**/*.supabase.co/**',route=>route.fulfill({status:400,contentType:'application/json',body:JSON.stringify({message:'Invalid login credentials'})}));
+  await page.goto(base+'/login');await page.getByRole('button',{name:/Password$/,exact:false}).click();await page.locator('input[type=email]').fill('student.cs24@bmsce.ac.in');await page.locator('input[type=password]').fill('deliberately-wrong-password');await page.getByRole('button',{name:'Sign In with Password',exact:true}).click();await page.getByText('Invalid login credentials',{exact:true}).waitFor();assert.equal(await page.evaluate(()=>localStorage.getItem('garbamate_auth_session')),null);results.push({check:'Rejected password never falls back to local authentication',pass:true});await context.close();
+  for(const complete of [false,true]){
+    const context=await browser.newContext(),page=await context.newPage();
+    const account={id:'00000000-0000-4000-8000-000000000001',email:'student.cs24@bmsce.ac.in',email_confirmed_at:new Date().toISOString(),app_metadata:{provider:'email'},user_metadata:{},aud:'authenticated'};
+    const access_token=[{alg:'HS256',typ:'JWT'},{sub:account.id,role:'authenticated',aud:'authenticated',exp:Math.floor(Date.now()/1000)+3600},'fixture'].map(p=>typeof p==='string'?p:Buffer.from(JSON.stringify(p)).toString('base64url')).join('.');
+    const session={access_token,refresh_token:'fixture',expires_at:Math.floor(Date.now()/1000)+3600,expires_in:3600,token_type:'bearer',user:account};
+    const profile={id:account.id,first_name:'Student',age:20,gender:'Woman',branch:'CSE',year:2,styles:[],looking_for:[],interests:[],available_nights:[],partner_preference:'Everyone',onboarding_complete:complete,has_seen_discover_tutorial:true,is_verified:true};
+    await context.routeWebSocket('**/*.supabase.co/**',socket=>socket.close());
+    await context.route('**/*.supabase.co/**',route=>{const path=new URL(route.request().url()).pathname;let response=path.endsWith('/token')?session:path.endsWith('/user')?account:path.endsWith('/profiles')?profile:[];return route.fulfill({status:200,contentType:'application/json',body:JSON.stringify(response)});});
+    await page.goto(base+'/login');await page.getByRole('button',{name:/Password$/,exact:false}).click();await page.locator('input[type=email]').fill(account.email);await page.locator('input[type=password]').fill('fixture-valid-password');await page.getByRole('button',{name:'Sign In with Password',exact:true}).click();await page.waitForURL(base+(complete?'/discover':'/onboarding'));assert.equal(await page.evaluate(()=>localStorage.getItem('garbamate_local_accounts')),null);results.push({check:`Confirmed college password session routes to ${complete?'Discover':'onboarding'} via Supabase (emulated auth transport)`,pass:true});await context.close();
+  }
+}finally{await browser.close();fs.writeFileSync('/tmp/omnirush/auth-health-results.json',JSON.stringify(results,null,2));console.log(results);}})().catch(error=>{console.error(error);process.exitCode=1;});

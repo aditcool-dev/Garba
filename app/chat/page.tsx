@@ -64,7 +64,7 @@ export default function ChatsListPage() {
                     <Card className="flex items-center gap-3 p-3.5 transition group-hover:-translate-y-0.5 group-hover:border-[#ffd166]/35 sm:p-4">
                       <div className="relative"><AvatarFallback src={partner?.photo_path} name={name} fallback={partner?.photo_path || "💃"} size="md" /><span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#18113f] bg-[#2dd4bf]" title="Available" /></div>
                       <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-bold text-white">{name}</h3><VerifiedBadge className="text-[10px]" /><span className="hidden rounded-full bg-[#2dd4bf]/10 px-2 py-0.5 text-[9px] font-bold text-[#73f4df] sm:inline">MATCHED</span></div>
+                        <div className="flex flex-wrap items-center gap-2"><h3 className="truncate text-sm font-bold text-white">{name}</h3>{partner?.is_verified && <VerifiedBadge className="text-[10px]" />}<span className="hidden rounded-full bg-[#2dd4bf]/10 px-2 py-0.5 text-[9px] font-bold text-[#73f4df] sm:inline">MATCHED</span></div>
                         <p className="mt-0.5 truncate text-[11px] text-[#aaa8d0]">{partner?.branch || "BMSCE"} · Year {partner?.year || 2}</p>
                         <p className="mt-1 truncate text-[11px] font-semibold text-[#ffd166]">Say hello and choose a Garba night →</p>
                       </div>

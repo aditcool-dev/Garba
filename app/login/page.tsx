@@ -5,7 +5,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Card } from "@/components/ui";
 import { useAuth } from "@/lib/supabase/auth-context";
-import { getSupabaseClient } from "@/lib/supabase/client";
 
 function GoogleIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
@@ -32,7 +31,7 @@ function GoogleIcon({ className = "w-5 h-5" }: { className?: string }) {
 
 export default function Login() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithOtp, signInWithPassword, user } = useAuth();
+  const { signInWithGoogle, signInWithOtp, signInWithPassword, user, profile } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [linkSent, setLinkSent] = useState(false);
@@ -56,37 +55,10 @@ export default function Login() {
 
   // If already logged in, redirect to discover immediately
   useEffect(() => {
-    if (user) {
-      router.push("/discover");
+    if (user && profile?.id === user.id) {
+      router.push(profile.onboarding_complete ? "/discover" : "/onboarding");
     }
-  }, [user, router]);
-
-  // When link is sent, listen for the session activation across tabs or from email click
-  useEffect(() => {
-    if (!linkSent) return;
-
-    const interval = setInterval(async () => {
-      const client = getSupabaseClient();
-      if (client) {
-        const { data } = await client.auth.getSession();
-        if (data?.session?.user) {
-          router.push("/discover");
-        }
-      }
-    }, 1500);
-
-    const handleStorage = (e: StorageEvent) => {
-      if (e.key === "garbamate_auth_session" && e.newValue) {
-        router.push("/discover");
-      }
-    };
-    window.addEventListener("storage", handleStorage);
-
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, [linkSent, router]);
+  }, [user, profile, router]);
 
   const handleGoogle = async () => {
     setGoogleLoading(true);

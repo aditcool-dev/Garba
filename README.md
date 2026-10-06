@@ -4,10 +4,10 @@ Mobile-first BMSCE Navratri partner finder. Built with Next.js, TypeScript, Tail
 
 ## Local setup
 
-1. `npm install` and copy `.env.example` to `.env.local`.
+1. `npm ci` and configure the public variables from `.env.example` in `.env.local`.
 2. Create a Supabase project and set `NEXT_PUBLIC_SUPABASE_URL` and `NEXT_PUBLIC_SUPABASE_ANON_KEY`. Enable Google OAuth and email verification, and set the callback URL to `${NEXT_PUBLIC_SITE_URL}/auth/callback`.
-3. Apply `supabase/migrations/001_init.sql` only once. If the tables already exist, do **not** rerun it; apply `002_auth_profile_hardening.sql`, `003_message_rls_hardening.sql`, then `004_public_name_discovery.sql` in the Supabase SQL editor. These follow-up migrations are non-destructive. Add a Storage bucket for profile photos with authenticated user-folder policies.
+3. For a fresh database, apply migrations 001–010 in order. Apply `001_init.sql` only once. For a project already on 008/009, follow `HEALTH_CHECK.md` to audit/clean legacy data and apply the idempotent 010 repair. Add a Storage bucket for real-account photos with authenticated user-folder policies.
 4. `npm run dev`; run `npm run typecheck`, `npm run lint`, `npm run test`, and `npm run build`.
-5. `npm run seed` is intentionally safe/no-op until a local service-role seed implementation is configured. Create the first admin by inserting the auth user UUID into `admin_users` in SQL.
+5. `npm run seed:samples` creates 30 emoji-only, nonmatching samples through the Auth Admin API. Configure the service-role key only in ignored local `.env.samples`; never expose it on the client. `npm run seed:samples:remove` removes them. Admins must be confirmed college accounts assigned to `admin_users`.
 
-See `DEPLOYMENT.md`, `SECURITY.md`, `TESTING.md`, and `DECISIONS.md`.
+See `HEALTH_CHECK.md` for ordered SQL/commands, actual verification results and limits; also `DEPLOYMENT.md`, `SECURITY.md`, `TESTING.md`, and `DECISIONS.md`.

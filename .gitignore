@@ -3,6 +3,9 @@ node_modules/
 out/
 .env
 .env.local
+.env.*
+!.env.example
+.kilo/
 *.tsbuildinfo
 playwright-report/
 test-results/

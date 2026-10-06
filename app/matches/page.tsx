@@ -163,7 +163,7 @@ function MatchesContent() {
                         <div className="min-w-0 flex-1">
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="display-font truncate text-base font-bold text-white">{name}</h3>
-                            <VerifiedBadge className="text-[10px]" />
+                            {person?.is_verified && <VerifiedBadge className="text-[10px]" />}
                           </div>
                           <p className="mt-0.5 text-[11px] text-[#aaa8d0]">{person?.branch || "BMSCE"} · Year {person?.year || 2}</p>
                           {person?.bio && <p className="mt-2 line-clamp-2 text-xs leading-5 text-[#cbc9e8]">&ldquo;{person.bio}&rdquo;</p>}

@@ -29,7 +29,7 @@ export function MatchActions({ match, name, profileId, visible = false }: { matc
     </div>
     {error && <p role="alert" className="text-xs text-rose-200">{error}</p>}
     <BottomSheet open={report} onClose={() => setReport(false)} title={`Report ${name}`} description="Your report is reviewed confidentially.">
-      <form onSubmit={async (event) => { event.preventDefault(); if(!user) return; const data=new FormData(event.currentTarget); await db.createReport({reporter_id:user.id,reported_user_id:profileId,reason:"other",description:String(data.get("description")||"")}); setReport(false); }}>
+      <form onSubmit={async (event) => { event.preventDefault(); if(!user || lock.current) return; const data=new FormData(event.currentTarget); lock.current=true; try { await db.createReport({reporter_id:user.id,reported_user_id:profileId,reason:"other",description:String(data.get("description")||"")}); setReport(false); } catch { setError("Couldn’t send report. Please try again."); } finally { lock.current=false; } }}>
         <label className="text-sm">What happened?<textarea name="description" maxLength={1000} className="mt-2 w-full rounded-xl bg-[#211952] p-3" /></label>
         <Button type="submit" className="mt-3 w-full">Submit report</Button>
       </form>

@@ -164,7 +164,7 @@ export default function Home() {
           <div className="rounded-[24px] border border-[#ffd166]/20 bg-[#211952]/55 p-4 shadow-[0_16px_40px_rgba(0,0,0,.16)] sm:p-5">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">The floor opens soon</p>
+                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">Find your festival rhythm</p>
                 <h2 className="display-font mt-1 text-xl font-bold text-white">{FESTIVAL.name} 2026</h2>
               </div>
               <span className="rounded-full bg-[#ffd166]/10 px-2.5 py-1 text-[10px] font-bold text-[#ffdca0]">{`${FESTIVAL.nights} nights · BMSCE`}</span>

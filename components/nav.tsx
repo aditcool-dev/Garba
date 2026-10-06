@@ -23,13 +23,13 @@ export function Nav() {
     // Load initial count
     db.getIncomingInterests(user.id).then((list) => {
       setInterestCount(list.length);
-    });
+    }).catch(error => console.warn("[nav] interests", error));
 
     // Real-time listener
     const unsub = db.subscribeToInterests(user.id, () => {
       db.getIncomingInterests(user.id).then((list) => {
         setInterestCount(list.length);
-      });
+      }).catch(error => console.warn("[nav] interests", error));
     });
 
     return () => {

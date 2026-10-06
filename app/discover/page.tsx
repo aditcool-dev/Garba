@@ -24,7 +24,7 @@ import { AvatarFallback, Badge, Button, Card, NightStrip, ScoreRing, VerifiedBad
 import { BRANCHES } from "@/config/branches";
 import { compatibilityScore } from "@/lib/scoring";
 import { useAuth } from "@/lib/supabase/auth-context";
-import { db, INITIAL_DEMO_PROFILES } from "@/lib/supabase/client";
+import { db } from "@/lib/supabase/client";
 import type { Match, Profile } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 
@@ -34,15 +34,6 @@ const STYLE_OPTIONS = ["Traditional Garba", "Bollywood Garba", "Dandiya", "2-Taa
 const EXPERIENCE_OPTIONS = ["Beginner", "Intermediate", "Advanced", "Just for the fun 😂"];
 const EMPTY_NIGHTS: number[] = [];
 const DiscoverTutorial = dynamic(() => import("@/components/discover-tutorial").then((module) => module.DiscoverTutorial), { ssr: false });
-
-function shuffleArray<T>(items: T[]) {
-  const copy = [...items];
-  for (let index = copy.length - 1; index > 0; index -= 1) {
-    const randomIndex = Math.floor(Math.random() * (index + 1));
-    [copy[index], copy[randomIndex]] = [copy[randomIndex], copy[index]];
-  }
-  return copy;
-}
 
 function vibrate(pattern: number | number[] = 10) {
   if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") navigator.vibrate(pattern);
@@ -165,10 +156,9 @@ export default function Discover() {
   const loadData = useCallback(async () => {
     const ticket = ++dataRequest.current;
     try {
-    const demoEnabled = process.env.NEXT_PUBLIC_ENABLE_DEMO_DATA === "true";
     if (!user) {
       const publicNames = await db.getPublicProfileNames();
-      const safeNames = publicNames.length ? publicNames.map((entry) => entry.first_name) : INITIAL_DEMO_PROFILES.map((entry) => entry.first_name);
+       const safeNames = publicNames.map((entry) => entry.first_name);
       setGuestNames(safeNames);
       setProfiles([]);
       setIndex(0);
@@ -204,7 +194,7 @@ export default function Discover() {
     setPassedUserIds(outgoingPasses);
     setBlockedUserIds(blocked);
     setFeedError(null);
-    } catch { if (ticket === dataRequest.current) setFeedError("Couldn’t load your floor. Please retry."); }
+    } catch (error) { console.error("[discover] load failed", { route: "/discover", error }); if (ticket === dataRequest.current) setFeedError("Couldn’t load your floor. Please retry."); }
   }, [user, feedProfileKey, feedSeed]);
 
   useEffect(() => {
@@ -527,7 +517,13 @@ export default function Discover() {
         </div>
       </div>
 
-      {person && <BottomSheet open={detailsOpen} onClose={() => setDetailsOpen(false)} title={`${person.first_name}'s Garba vibe`} description="A little more context before you decide."><div className="space-y-5"><div className="relative h-56 overflow-hidden rounded-[24px]"><IllustratedProfileVisual person={person} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0a0820] p-4 pt-12"><h3 className="display-font text-2xl font-bold text-white">{person.first_name}, {person.age}</h3><p className="text-xs text-white/75">{person.branch} · Year {person.year}</p></div></div><div className="flex items-center justify-between"><VerifiedBadge /><ScoreRing score={scoreFor(person)} size="sm" label="Garba compatibility" /></div><p className="text-sm leading-6 text-[#cbc9e8]">{person.bio || "Ready to share a few rounds on the floor."}</p><div className="flex flex-wrap gap-2">{person.styles.map((style) => <Badge key={style}>{style}</Badge>)}</div><NightStrip nights={person.available_nights} highlightedNights={person.available_nights.filter((night) => myNights.includes(night))} /><div className="flex gap-2"><Button className="flex-1" onClick={() => { setDetailsOpen(false); triggerSwipe("like"); }}>Interested</Button><Link href={`/profile/${person.id}`} className="flex-1"><Button variant="secondary" className="w-full">View profile</Button></Link></div></div></BottomSheet>}
+      {person && <BottomSheet open={detailsOpen} onClose={() => setDetailsOpen(false)} title={`${person.first_name}'s Garba vibe`} description="A little more context before you decide.">
+        <div className="space-y-5"><div className="relative h-56 overflow-hidden rounded-[24px]"><IllustratedProfileVisual person={person} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0a0820] p-4 pt-12"><h3 className="display-font text-2xl font-bold text-white">{person.first_name}, {person.age}</h3><p className="text-xs text-white/75">{person.branch} · Year {person.year}</p></div></div>
+          <div className="flex items-center justify-between">{person.is_verified && <VerifiedBadge />}<ScoreRing score={scoreFor(person)} size="sm" label="Garba compatibility" /></div>
+          <p className="text-sm leading-6 text-[#cbc9e8]">{person.bio || "Ready to share a few rounds on the floor."}</p><div className="flex flex-wrap gap-2">{person.styles.map((style) => <Badge key={style}>{style}</Badge>)}</div><NightStrip nights={person.available_nights} highlightedNights={person.available_nights.filter((night) => myNights.includes(night))} />
+          <div className="flex gap-2"><Button className="flex-1" onClick={() => { setDetailsOpen(false); triggerSwipe("like"); }}>Interested</Button><Link href={`/profile/${person.id}`} className="flex-1"><Button variant="secondary" className="w-full">View profile</Button></Link></div>
+        </div>
+      </BottomSheet>}
 
       <BottomSheet open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Tune your floor" description="Choose what feels right. You can change these anytime."><div className="space-y-6"><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Branch</p><div className="grid grid-cols-2 gap-2 sm:grid-cols-3"><TogglePill active={filterBranch === "All"} onClick={() => setFilterBranch("All")}>All branches</TogglePill>{BRANCHES.map((branch) => <TogglePill key={branch} active={filterBranch === branch} onClick={() => setFilterBranch(branch)}>{branch}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Year</p><div className="grid grid-cols-5 gap-2"><TogglePill active={filterYear === "All"} onClick={() => setFilterYear("All")}>All</TogglePill>{[1, 2, 3, 4].map((year) => <TogglePill key={year} active={filterYear === year} onClick={() => setFilterYear(year)}>{year}{year === 1 ? "st" : year === 2 ? "nd" : year === 3 ? "rd" : "th"}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Style</p><div className="flex flex-wrap gap-2"><TogglePill active={filterStyle === "All"} onClick={() => setFilterStyle("All")}>All styles</TogglePill>{STYLE_OPTIONS.map((style) => <TogglePill key={style} active={filterStyle === style} onClick={() => setFilterStyle(style)}>{style}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Experience</p><div className="flex flex-wrap gap-2"><TogglePill active={filterExperience === "All"} onClick={() => setFilterExperience("All")}>Everyone</TogglePill>{EXPERIENCE_OPTIONS.map((experience) => <TogglePill key={experience} active={filterExperience === experience} onClick={() => setFilterExperience(experience)}>{experience}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Navratri night</p><div className="grid grid-cols-5 gap-2 sm:grid-cols-9">{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((night) => <TogglePill key={night} active={filterNight === night} onClick={() => setFilterNight(filterNight === night ? "All" : night)}>D{night}</TogglePill>)}</div></div><button type="button" onClick={() => setOnlyMyNights((current) => !current)} aria-pressed={onlyMyNights} className={cn("flex min-h-14 w-full items-center justify-between rounded-2xl border px-4 text-left text-xs font-bold", onlyMyNights ? "border-[#ffc83d]/50 bg-[#ffc83d]/10 text-[#ffe49a]" : "border-white/10 bg-white/[0.04] text-[#cbc9e8]")}><span><span className="block">Only people on my nights</span><span className="mt-1 block text-[10px] font-normal text-[#aaa8d0]">Show profiles with at least one shared Navratri night.</span></span><span className="text-lg">{onlyMyNights ? "✓" : "○"}</span></button><div className="flex items-center justify-between border-t border-white/10 pt-4"><span className="text-xs text-[#aaa8d0]">{filteredProfiles.length} profiles match</span><div className="flex gap-2"><Button variant="ghost" className="min-h-11 px-4 text-xs" onClick={resetFilters}>Reset</Button><Button className="min-h-11 px-5 text-xs" onClick={() => setFiltersOpen(false)}>Apply filters</Button></div></div></div></BottomSheet>
 

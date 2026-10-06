@@ -42,7 +42,9 @@ export default function ChatPage() {
     setNotFound(false);setLoading(true);setPartner(activeMatch.partner||null);setActiveChatId(activeMatch.id);
     const generation=activeMatch.chat_started_at||activeMatch.created_at;
     void db.getMessages(activeMatch.id).then((rows)=>{if(!cancelled){setMessages(rows.filter((message)=>message.created_at>=generation));setLoading(false);}}).catch(()=>{if(!cancelled){setNotFound(true);setLoading(false);}});
-    const unsubscribe=db.subscribeToMessages(activeMatch.id,(message)=>{if(!cancelled&&message.created_at>=generation)setMessages((rows)=>rows.some((row)=>row.id===message.id)?rows:[...rows,message]);});
+    const read=()=>{void db.markChatRead(activeMatch.id).catch(error=>console.warn("[chat] read status",error));};
+    read();
+    const unsubscribe=db.subscribeToMessages(activeMatch.id,(message)=>{if(!cancelled&&message.created_at>=generation){setMessages((rows)=>rows.some((row)=>row.id===message.id)?rows:[...rows,message]);read();}});
     return ()=>{cancelled=true;unsubscribe();};
   }, [matchId,user,matchesLoading,activeMatch?.id,activeMatch?.chat_started_at]);
 
@@ -114,7 +116,7 @@ export default function ChatPage() {
           <div className="flex min-w-0 items-center gap-3">
             <Link href="/chat" aria-label="Back to chats" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-lg text-[#cbc9e8] transition hover:bg-white/10">←</Link>
             <div className="relative"><AvatarFallback src={partner.photo_path} name={partnerName} fallback={partner.photo_path || "🌸"} size="md" /><span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#18113f] bg-[#2dd4bf]" title="Available" /></div>
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-base font-bold text-white sm:text-lg">{partnerName}</h1><VerifiedBadge className="text-[10px]" /></div><p className="mt-0.5 truncate text-[11px] text-[#aaa8d0]">{partner.branch || "BMSCE"} · matched for Navratri</p></div>
+            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-base font-bold text-white sm:text-lg">{partnerName}</h1>{partner.is_verified && <VerifiedBadge className="text-[10px]" />}</div><p className="mt-0.5 truncate text-[11px] text-[#aaa8d0]">{partner.branch || "BMSCE"} · matched for Navratri</p></div>
           </div>
           <Link href={`/profile/${partner.id}`} className="hidden min-h-10 shrink-0 items-center rounded-full border border-white/10 px-3 py-2 text-[11px] font-bold text-[#ffd166] transition hover:bg-white/5 sm:inline-flex">View profile</Link>
           <MatchActions match={activeMatch} name={partnerName} profileId={partner.id} />

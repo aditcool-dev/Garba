@@ -26,7 +26,7 @@ export async function capturePassUndo(from: string, to: string): Promise<() => P
   if (client) {
     try {
       const [likeRows, passRows] = await Promise.all([
-        client.from("likes").select("*").or(`and(from_user.eq.${from},to_user.eq.${to}),and(from_user.eq.${to},to_user.eq.${from})`),
+        client.from("likes").select("*").eq("from_user", from).eq("to_user", to),
         client.from("passes").select("*").eq("from_user", from).eq("to_user", to),
       ]);
       remoteSnapshotAvailable = !likeRows.error && !passRows.error;

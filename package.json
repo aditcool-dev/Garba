@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "prebuild": "node scripts/check-env.cjs",
+    "check:env": "node scripts/check-env.cjs",
     "dev": "next dev -p 3000 -H 0.0.0.0",
     "build": "next build && mkdir -p .next/static/css/app && cp .next/static/css/*.css .next/static/css/app/layout.css",
     "start": "next start",
@@ -11,8 +13,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "seed": "tsx scripts/seed.ts",
-    "seed:clear": "tsx scripts/seed-clear.ts"
+    "seed:samples": "tsx --env-file=.env.samples scripts/seed-samples.ts",
+    "seed:samples:remove": "tsx --env-file=.env.samples scripts/seed-samples.ts --remove",
+    "audit:data": "tsx --env-file=.env.samples scripts/seed-samples.ts --audit"
   },
   "dependencies": {
     "@supabase/ssr": "^0.7.0",
