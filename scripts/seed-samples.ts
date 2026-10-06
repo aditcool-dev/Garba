@@ -6,6 +6,15 @@ const key=process.env.SUPABASE_SERVICE_ROLE_KEY;
 if(!url || !key) throw new Error("Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY in ignored .env.samples");
 const client=createClient(url,key,{auth:{persistSession:false,autoRefreshToken:false}});
 function check<T>(result:{data:T;error:unknown}):T {if(result.error)throw result.error;return result.data;}
+function errorDetails(error:unknown):string {
+  if(error instanceof Error){
+    const fields:Record<string,unknown>={};
+    for(const name of Object.getOwnPropertyNames(error)) fields[name]=(error as unknown as Record<string,unknown>)[name];
+    if(!fields.message) fields.message=error.message;
+    return JSON.stringify(fields);
+  }
+  try{return JSON.stringify(error,Object.getOwnPropertyNames(Object(error)));}catch{return String(error);}
+}
 async function users() {
   const result:User[]=[];
   for(let page=1;;page++){const response=await client.auth.admin.listUsers({page,perPage:100});if(response.error)throw response.error;const data=response.data;result.push(...data.users);if(data.users.length<100)return result;}
@@ -40,16 +49,22 @@ async function main(){
     console.log(`Removed ${owned.length} sample Auth users and their cascading profiles/decisions.`);return;
   }
   for(const item of SAMPLE_DATA){
-    const email=`floor-${item.slot}@samples.garbamate.invalid`;
+    const slot=String(item.slot).padStart(2,"0");
+    if(!/^(0[1-9]|[12][0-9]|30)$/.test(slot)) throw new Error(`Invalid sample slot ${item.slot}; expected 01 through 30`);
+    const email=`floor-${slot}@samples.garbamate.invalid`;
     let account=all.find(u=>u.email===email);
-    if(account && account.app_metadata?.is_sample!==true)throw new Error(`Reserved address collision at slot ${item.slot}; refusing to modify account`);
-    if(!account){const response=await client.auth.admin.createUser({email,email_confirm:true,ban_duration:"876000h",app_metadata:{is_sample:true},user_metadata:{first_name:item.first_name}});if(response.error)throw response.error;account=response.data.user||undefined;}
+    if(account && account.app_metadata?.is_sample!==true)throw new Error(`Reserved address collision at slot ${slot}; refusing to modify account`);
+    if(!account){
+      const response=await client.auth.admin.createUser({email,email_confirm:true,ban_duration:"876000h",app_metadata:{is_sample:true},user_metadata:{first_name:item.first_name}});
+      if(response.error)throw new Error(`Auth Admin createUser failed for ${email}: ${errorDetails(response.error)}`);
+      account=response.data.user||undefined;
+    }
     if(!account)throw new Error("Auth Admin API returned no user");
-    const update=await client.auth.admin.updateUserById(account.id,{ban_duration:"876000h",app_metadata:{is_sample:true}});if(update.error)throw update.error;
+    const update=await client.auth.admin.updateUserById(account.id,{ban_duration:"876000h",app_metadata:{is_sample:true}});if(update.error)throw new Error(`Auth Admin updateUserById failed for ${email}: ${errorDetails(update.error)}`);
     const {slot:_slot,...profile}=item;
     check(await client.from("profiles").upsert({...profile,id:account.id,is_sample:true,is_verified:false,is_demo:false,onboarding_complete:true,is_hidden:false,is_suspended:false,is_banned:false,has_seen_discover_tutorial:true}));
   }
   check(await client.from("app_settings").upsert({key:"SHOW_SAMPLE_PROFILES",value:process.env.SHOW_SAMPLE_PROFILES!=="false"}));
   console.log("30 sample profiles ready (20 women, 10 men). No duplicates, photos or public credentials.");
 }
-main().catch(error=>{console.error("Sample operation failed:",error instanceof Error?error.message:JSON.stringify(error));process.exitCode=1;});
+main().catch(error=>{console.error("Sample operation failed:",errorDetails(error));process.exitCode=1;});

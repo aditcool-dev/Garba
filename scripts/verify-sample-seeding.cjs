@@ -12,7 +12,11 @@ const server=http.createServer(async(req,res)=>{try{
   if(url.pathname==='/auth/v1/admin/users'&&req.method==='GET')data={users:(sql('select json_agg(u) from auth.users u;')||[]).map(user)};
   else if(url.pathname==='/auth/v1/admin/users'&&req.method==='POST'){
     assert.equal(body.ban_duration,'876000h');assert(body.app_metadata.is_sample);
-    const row=sql(`with u as(insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data,email_confirmed_at) values(gen_random_uuid(),${quote(body.email)},${quote(JSON.stringify(body.app_metadata))}::jsonb,${quote(JSON.stringify(body.user_metadata))}::jsonb,now()) returning *) select row_to_json(u) from u;`);data=user(row);
+     // Model current GoTrue: INSERT first with provider metadata, then apply
+     // the Admin app_metadata in the same transaction. Migration 011 must ban
+     // the temporary unmarked reserved row and keep it banned after the mark.
+     const inserted=sql(`with u as(insert into auth.users(id,email,raw_app_meta_data,raw_user_meta_data,email_confirmed_at) values(gen_random_uuid(),${quote(body.email)},'{"provider":"email"}'::jsonb,${quote(JSON.stringify(body.user_metadata))}::jsonb,now()) returning *) select row_to_json(u) from u;`);
+     const row=sql(`with u as(update auth.users set raw_app_meta_data=${quote(JSON.stringify(body.app_metadata))}::jsonb where id=${quote(inserted.id)} returning *) select row_to_json(u) from u;`);data=user(row);
   }else if(url.pathname.startsWith('/auth/v1/admin/users/')&&req.method==='DELETE'){sql(`delete from auth.users where id=${quote(url.pathname.split('/').pop())};`);data={};}
   else if(url.pathname.startsWith('/auth/v1/admin/users/')&&req.method==='PUT'){assert.equal(body.ban_duration,'876000h');assert.equal(body.app_metadata.is_sample,true);const row=sql(`with u as(update auth.users set raw_app_meta_data=${quote(JSON.stringify(body.app_metadata))}::jsonb where id=${quote(url.pathname.split('/').pop())} returning *) select row_to_json(u) from u;`);data=user(row);}
   else if(url.pathname==='/storage/v1/bucket')data=[];
@@ -31,9 +35,9 @@ const server=http.createServer(async(req,res)=>{try{
 const run=(url,extra=[])=>new Promise((resolve,reject)=>{const proc=spawn(process.execPath,['node_modules/tsx/dist/cli.mjs','scripts/seed-samples.ts',...extra],{env:{...process.env,SUPABASE_URL:url,SUPABASE_SERVICE_ROLE_KEY:'health-service-fixture-not-a-real-secret'},stdio:['ignore','pipe','pipe']});let text='';proc.stdout.on('data',part=>text+=part);proc.stderr.on('data',part=>text+=part);proc.on('exit',code=>code?reject(new Error(text)):resolve(text));});
 (async()=>{await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));const url=`http://127.0.0.1:${server.address().port}`;try{
   const realBefore=sql('select count(*) from profiles where not is_sample;');
-  await run(url);assert.equal(sql('select count(*) from profiles where is_sample;'),30);
+   await run(url);assert.equal(sql('select count(*) from profiles where is_sample;'),30);assert.equal(sql('select count(*) from auth.users where raw_app_meta_data->>\'is_sample\'=\'true\' and banned_until is not null;'),30);
   const ids=sql("select json_agg(id order by id) from profiles where is_sample;");
-  await run(url);assert.deepEqual(sql("select json_agg(id order by id) from profiles where is_sample;"),ids);
+   await run(url);assert.deepEqual(sql("select json_agg(id order by id) from profiles where is_sample;"),ids);assert.equal(sql('select count(*) from auth.users where raw_app_meta_data->>\'is_sample\'=\'true\' and banned_until is not null;'),30);
   assert.equal(sql("select count(*) from profiles where is_sample and is_verified;"),0);
   results.push({check:'Admin API seeding twice: exactly 30, stable IDs, banned creation, no verified samples',pass:true});
   console.log(await run(url,['--audit']));

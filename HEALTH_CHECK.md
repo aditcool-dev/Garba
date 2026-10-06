@@ -13,6 +13,17 @@ realtime:active-matches:<user> after subscribe().
 
 This is the reproduced production-mode code failure. A deployment URL and deployment logs were unavailable, so other errors in a particular hosted release cannot be excluded from that evidence alone.
 
+## Sample seeding failure diagnosis
+
+The two suspects were checked separately:
+
+1. **Slot padding was not the live failure.** `scripts/sample-data.ts` already emitted `01` through `30`, and the seed command now independently pads and validates every slot before constructing the address. It refuses anything outside `01`–`30`.
+2. **GoTrue Admin metadata ordering is the live failure.** The installed `@supabase/auth-js` `createUser` implementation sends `app_metadata` in the Admin request, but the GoTrue server source at commit `ce9a8eee0cc042be8c7a42981a7ddae631e41d91` creates the `auth.users` row first with default provider metadata, then calls `UpdateAppMetaData` later in the same transaction. The `BEFORE INSERT` trigger therefore sees no `is_sample` marker and raises the BMSCE error before the later Admin update.
+
+Migration `011_auth_admin_sample_contract.sql` addresses that exact order. It permits only `floor-01` through `floor-30` at the insert boundary, immediately sets a far-future `banned_until` when the reserved account is not yet marked, and accepts the subsequent trusted Admin metadata update without unbanning it. A public signup cannot supply `raw_app_meta_data`; fake `user_metadata` is ignored. Non-reserved non-college addresses remain rejected, and a sample marker on a normal address is rejected. GoTrue treats a future `banned_until` as banned, so reserved public signups cannot produce usable sessions.
+
+The local environment did not have the Supabase CLI or Docker (`supabase start` could not be run). The GoTrue source ordering was verified directly, and migration 011 was tested twice against disposable PostgreSQL with a GoTrue-order INSERT→UPDATE contract, reserved-address containment, non-college rejection, real college insertion, sample ban state, and the emulated Admin seed program. Hosted GoTrue sign-in behavior still requires the live-project rerun below.
+
 ## Audit findings
 
 | Audit | Finding |
@@ -32,7 +43,7 @@ The hard-coded catalog, stock photos, fake local login/password store, admin pas
 - 008 creates tutorial state, match/chat epoch and unmatch metadata; participant-only unmatch/like/tutorial/block/evidence RPCs; hardened message policies and generation trigger.
 - 009 creates `discovery_overlap` and `discover_feed(p_seed text, p_after_key double precision, p_after_id uuid, p_limit integer)`.
 - The reproduced crash is **not** an RPC argument or missing-008/009-column failure. Anonymous live probes found `discover_feed`/`discovery_blocked_ids` and appropriately received permission-denied responses; REST accepted the match epoch/unmatch columns. Full authenticated policies were not inspectable remotely.
-- The new code additionally needs `is_sample`, trusted `is_verified`, `app_settings`, `get_admin_profiles`, `get_user_notifications`, `mark_chat_read`, and `mark_all_chats_read`. These are **not in 008/009**. Apply **`supabase/migrations/010_health_samples.sql`** before this frontend. That single script also reasserts the old signatures, indexes, grants, RLS, publication and epoch rules; it was run twice successfully.
+- The new code additionally needs `is_sample`, trusted `is_verified`, `app_settings`, `get_admin_profiles`, `get_user_notifications`, `mark_chat_read`, and `mark_all_chats_read`. These are **not in 008/009**. Apply **`supabase/migrations/010_health_samples.sql`**, then **`supabase/migrations/011_auth_admin_sample_contract.sql`**, before this frontend. 010 reasserts the old signatures, indexes, grants, RLS, publication and epoch rules; 011 fixes GoTrue Admin `createUser` metadata ordering without weakening the BMSCE rule.
 - Profiles are explicitly projected and normalized. Nullable styles/nights/interests/photo fields cannot crash a card. Invalid identity/age/gender/year/name rows are individually logged and skipped. Pagination preserves valid rows if the final row has an unusable cursor. PostgREST columns and RPC JSON do not expose `is_sample`, old demo flags, emails or USN fields. Technical UUID keys remain in relationship requests/routes, never in visible chips or search.
 
 ## Run against your Supabase project, in this order
@@ -74,11 +85,12 @@ Then run **`supabase/cleanup-legacy-demo.sql` again**. This finalizes auth/profi
 
 ### 3. Apply the database repair
 
-You already applied 008 and 009. In SQL Editor run only the new repair:
+You already applied 008 and 009. In SQL Editor run the two new repairs in order:
 
-**`supabase/migrations/010_health_samples.sql`**
+1. **`supabase/migrations/010_health_samples.sql`**
+2. **`supabase/migrations/011_auth_admin_sample_contract.sql`**
 
-It is safe to run twice. Do not rerun the non-idempotent 001 initialization. The repair removes legacy permissive app-table policies and creates the checked policies needed by this release, including admin membership and report review. It does not remove real conversations.
+Both repairs are safe to run twice. Do not rerun the non-idempotent 001 initialization. The repairs remove legacy permissive app-table policies and create the checked policies needed by this release, including admin membership and report review. They do not remove real conversations. Migration 011 is required before `npm run seed:samples` on hosted Supabase.
 
 Message visibility, unread counts and read receipts require the exact current chat-generation token as well as the timestamp cutoff. Legacy messages with no token are backfilled only when the match is still on its original epoch; unassignable legacy rows from already-reactivated conversations remain retained for admin evidence. A postdated old message cannot reappear in a fresh rematch.
 
@@ -97,6 +109,17 @@ npm run seed:samples
 npm run seed:samples
 npm run audit:data
 ```
+
+Before rerunning after the old failure, inspect only the reserved range in SQL Editor:
+
+```sql
+select id, email, raw_app_meta_data, banned_until
+from auth.users
+where lower(email) ~ '^floor-(0[1-9]|[12][0-9]|30)@samples\.garbamate\.invalid$'
+order by email;
+```
+
+The old `BEFORE INSERT` failure normally rolls back the first create. If an unmarked reserved row remains, do not repurpose it: remove that exact failed-run account through the Supabase Auth dashboard/Admin API, then rerun the seed. The seed intentionally refuses reserved-address collisions without the trusted sample marker.
 
 The second run demonstrates reuse: **30 total**, not 60. There are 20 women and 10 men, ages 18–22, plausible years, varied branches/styles/nights/preferences, friendly bios and 30 distinct emoji avatars. Internal reserved Auth addresses never enter profile API projections. The Admin API marks these accounts as samples and bans sign-in; profile badges are always false. Likes may be saved, but `like_user` exits before mutual matching; database triggers additionally prevent sample matches/messages. Samples are excluded from incoming interests, unread notifications and admin account totals.
 
@@ -166,7 +189,7 @@ Artifacts: `/tmp/omnirush/followup-results.json`, `verification-results.json`, `
 
 ### Reproduction commands for disposable tests
 
-Apply `tests/supabase-bootstrap.sql` and migrations 001–010 to fresh disposable databases, build with test-only public configuration, and start on port 3101. Do not run fixture-reset drivers against production. `verify-followups.cjs` requires a database name ending `_tests` and resets its Auth fixtures; run SQL integration suites in a separate disposable database.
+Apply `tests/supabase-bootstrap.sql` and migrations 001–011 to fresh disposable databases, build with test-only public configuration, and start on port 3101. Do not run fixture-reset drivers against production. `verify-followups.cjs` requires a database name ending `_tests` and resets its Auth fixtures; run SQL integration suites in a separate disposable database.
 
 ```bash
 npx tsc --noEmit
@@ -189,4 +212,4 @@ The drivers support `GARBA_TEST_URL`, `GARBA_CHROME_PATH`, `GARBA_PSQL` and `GAR
 - Android/iOS hardware, vibration, mobile browser chrome/safe areas and GPU performance. Layout/gestures were touch-emulated in Chromium.
 - A real hosted lazy-chunk outage and tutorial flag-save outage were not fault-injected. Existing timeout/error boundaries remain fail-open.
 
-No live records were seeded/deleted and no live migrations were applied by this check. Run the ordered deployment procedure above to ship the database and data changes.
+No live records were seeded/deleted and no live migrations were applied by this check. Run the ordered deployment procedure above to ship the database and data changes. The hosted GoTrue Admin create/sign-in path remains the final live verification because this environment could not start Supabase CLI/Docker.

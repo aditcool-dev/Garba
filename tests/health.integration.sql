@@ -15,7 +15,9 @@ do $$begin
   if exists(select 1 from public.profiles where id='00000000-0000-4000-8000-000000000203' and (not is_sample or is_verified)) then raise exception 'sample badge trust';end if;
   if exists(select 1 from public.profiles where id='00000000-0000-4000-8000-000000000204' and is_verified) then raise exception 'unconfirmed badge';end if;
   begin insert into auth.users(id,email) values(gen_random_uuid(),'x@gmail.com');raise exception 'gmail allowed';exception when others then if sqlerrm='gmail allowed' then raise;end if;end;
-  begin insert into auth.users(id,email,raw_user_meta_data) values(gen_random_uuid(),'floor-31@samples.garbamate.invalid','{"is_sample":true}');raise exception 'sample signup allowed';exception when others then if sqlerrm='sample signup allowed' then raise;end if;end;
+  insert into auth.users(id,email,raw_user_meta_data) values('00000000-0000-4000-8000-000000000205','floor-30@samples.garbamate.invalid','{"is_sample":true}');
+  if not exists(select 1 from auth.users where id='00000000-0000-4000-8000-000000000205' and banned_until is not null) then raise exception 'reserved public signup was usable';end if;
+  begin insert into auth.users(id,email,raw_app_meta_data) values(gen_random_uuid(),'not-sample@gmail.com','{"is_sample":true}');raise exception 'sample marker bypassed email rule';exception when others then if sqlerrm='sample marker bypassed email rule' then raise;end if;end;
 end;$$;
 insert into public.likes(from_user,to_user,kind) values('00000000-0000-4000-8000-000000000203','00000000-0000-4000-8000-000000000201','interested');
 set local role authenticated;
