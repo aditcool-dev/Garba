@@ -6,8 +6,9 @@ import { AppShell } from "@/components/app-shell";
 import { Button, Card } from "@/components/ui";
 import { BRANCHES } from "@/config/branches";
 import { useAuth } from "@/lib/supabase/auth-context";
-import { db } from "@/lib/supabase/client";
+import { db, getSupabaseClient } from "@/lib/supabase/client";
 import { uploadAvatar } from "@/lib/supabase/storage";
+import { isEligibleAccount, validateAge } from "@/lib/auth-flow";
 
 function isImageSrc(src?: string | null): boolean {
   if (!src) return false;
@@ -53,7 +54,9 @@ export default function Onboarding() {
   const [step, setStep] = useState(1);
 
   const [firstName, setFirstName] = useState(existingProfile?.first_name || "");
-  const [age, setAge] = useState<number>(existingProfile?.age || 20);
+  // A scaffold profile's database age is not the student's answer.
+  // Preserve raw input (including "") until validation/submission.
+  const [age, setAge] = useState("");
   const [branch, setBranch] = useState(existingProfile?.branch || "CSE");
   const [year, setYear] = useState<number>(existingProfile?.year || 2);
   const [bio, setBio] = useState(existingProfile?.bio || "");
@@ -65,6 +68,7 @@ export default function Onboarding() {
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -73,8 +77,8 @@ export default function Onboarding() {
     setUploadError(null);
     setUploadSuccess(false);
 
-    const userId = user?.id || "student-temp";
-    const { url, error } = await uploadAvatar(userId, file);
+    if (!user) { setUploading(false); setUploadError("Please sign in before uploading a photo."); return; }
+    const { url, error } = await uploadAvatar(user.id, file);
     if (!error && url) {
       setPhoto(url);
       setUploadSuccess(true);
@@ -97,47 +101,46 @@ export default function Onboarding() {
   };
 
   const handleFinish = async () => {
+    const parsed = validateAge(age);
+    if (parsed.error !== null) { setFormError(parsed.error); setStep(3); return; }
+    if (!firstName.trim()) { setFormError("Please enter your first name or nickname."); setStep(2); return; }
+    if (saving) return;
     setSaving(true);
-    let currentUserId = user?.id;
+    setFormError(null);
+    try {
+      const client = getSupabaseClient();
+      const authenticated = client ? await client.auth.getUser() : null;
+      const account = authenticated?.data.user || null;
+      if (authenticated?.error || !isEligibleAccount(account) || account.id !== user?.id) throw new Error("Your sign-in session expired. Please sign in again.");
+      await db.upsertProfile({
+        id: account.id,
+        first_name: firstName.trim(),
+        age: parsed.age,
+        gender: existingProfile?.gender || "Prefer not to say",
+        branch,
+        year: Number(year) || 2,
+        bio: bio || "Excited for BMSCE Navratri!",
+        experience,
+        styles: selectedStyles.length ? selectedStyles : ["Traditional Garba"],
+        looking_for: existingProfile?.looking_for.length ? existingProfile.looking_for : ["Garba partner"],
+        available_nights: existingProfile?.available_nights.length ? existingProfile.available_nights : [1, 2, 3, 4, 5, 6, 7, 8, 9],
+        interests: selectedInterests.length ? selectedInterests : ["dance"],
+        partner_preference: existingProfile?.partner_preference || "Everyone",
+        photo_path: photo,
+        onboarding_complete: true,
+      });
+      await refreshProfile();
+      router.replace("/discover");
+    } catch (error) {
+      setFormError(error instanceof Error ? error.message : "Could not save your profile. Please try again.");
+    } finally { setSaving(false); }
+  };
 
-    if (!currentUserId && typeof window !== "undefined") {
-      try {
-        const stored = localStorage.getItem("garbamate_auth_session");
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          currentUserId = parsed.id;
-        }
-      } catch (err) {
-        console.warn("Session parse error:", err);
-      }
-    }
-
-    if (!currentUserId) currentUserId = `student-${Date.now()}`;
-
-    await db.upsertProfile({
-      id: currentUserId,
-      first_name: firstName || "Student",
-      age: Number(age) || 20,
-      gender: "Prefer not to say",
-      branch,
-      year: Number(year) || 2,
-      bio: bio || "Excited for BMSCE Navratri!",
-      experience,
-      styles: selectedStyles.length ? selectedStyles : ["Traditional Garba"],
-      looking_for: ["Garba partner"],
-      available_nights: [1, 2, 3, 4, 5, 6, 7, 8, 9],
-      interests: selectedInterests.length ? selectedInterests : ["dance"],
-      partner_preference: "Everyone",
-      photo_path: photo,
-      onboarding_complete: true,
-      is_hidden: false,
-      is_suspended: false,
-      is_banned: false,
-    });
-
-    await refreshProfile();
-    setSaving(false);
-    router.push("/discover");
+  const handleContinue = () => {
+    if (step === 2 && !firstName.trim()) { setFormError("Please enter your first name or nickname."); return; }
+    if (step === 3) { const parsed = validateAge(age); if (parsed.error) { setFormError(parsed.error); return; } }
+    setFormError(null);
+    setStep(current => Math.min(TOTAL_STEPS, current + 1));
   };
 
   const title = STEP_TITLES[step - 1];
@@ -157,7 +160,7 @@ export default function Onboarding() {
 
             {step === 2 && <div className="mx-auto max-w-md pt-8"><label htmlFor="first-name" className="text-xs font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Your first name or nickname</label><input id="first-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} maxLength={40} autoComplete="given-name" className="mt-3 w-full rounded-2xl border border-white/10 bg-[#100a2c] px-4 py-4 text-lg font-semibold text-white outline-none transition focus:border-[#ffd166]" placeholder="e.g. Aditya" /><p className="mt-2 text-[11px] text-[#73789e]">This is the name your matches will see.</p></div>}
 
-            {step === 3 && <div className="mx-auto max-w-md pt-8"><label htmlFor="age" className="text-xs font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Your age</label><div className="mt-3 flex items-center gap-3"><input id="age" type="number" min={18} max={30} value={age} onChange={(e) => setAge(Number(e.target.value))} className="w-full rounded-2xl border border-white/10 bg-[#100a2c] px-4 py-4 text-2xl font-bold text-white outline-none transition focus:border-[#ffd166]" /><span className="text-sm text-[#aaa8d0]">years</span></div><p className="mt-3 text-[11px] text-[#73789e]">You must be 18 or older to use GarbaMate.</p></div>}
+            {step === 3 && <div className="mx-auto max-w-md pt-8"><label htmlFor="age" className="text-xs font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Your age</label><div className="mt-3 flex items-center gap-3"><input id="age" type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off" value={age} aria-describedby="age-help" aria-invalid={!!formError} onChange={(e) => { if (/^\d*$/.test(e.target.value)) { setAge(e.target.value); setFormError(null); } }} className="w-full rounded-2xl border border-white/10 bg-[#100a2c] px-4 py-4 text-2xl font-bold text-white outline-none transition focus:border-[#ffd166]" /><span className="text-sm text-[#aaa8d0]">years</span></div><p id="age-help" className="mt-3 text-[11px] text-[#73789e]">You must be 18 or older to use GarbaMate.</p></div>}
 
             {step === 4 && <div className="mx-auto max-w-md pt-8"><label htmlFor="branch" className="text-xs font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Your BMSCE branch</label><select id="branch" value={branch} onChange={(e) => setBranch(e.target.value)} className="mt-3 w-full rounded-2xl border border-white/10 bg-[#191342] p-4 text-base font-semibold text-white outline-none transition focus:border-[#ffd166]">{BRANCHES.map((item) => <option key={item} value={item}>{item}</option>)}</select><p className="mt-3 text-[11px] text-[#73789e]">Shown as a small context line on your card.</p></div>}
 
@@ -174,7 +177,8 @@ export default function Onboarding() {
             {step === 10 && <div className="mx-auto max-w-md"><div className="overflow-hidden rounded-[26px] border border-white/10 bg-gradient-to-br from-[#2b215b] to-[#151034] shadow-[0_20px_45px_rgba(0,0,0,.24)]"><div className="flex items-center justify-between border-b border-white/10 px-5 py-4"><span className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">Preview card</span><span className="text-[10px] font-bold text-[#73f4df]">✓ Verified student</span></div><div className="p-5"><div className="flex items-center gap-4"><div className="flex h-20 w-20 shrink-0 items-center justify-center overflow-hidden rounded-3xl border border-white/15 bg-white/[0.06] text-4xl">{isImageSrc(photo) ? <img src={photo} alt="Avatar preview" className="h-full w-full object-cover" /> : photo}</div><div className="min-w-0"><h3 className="display-font truncate text-2xl font-bold text-white">{firstName || "Student"}, {age}</h3><p className="mt-1 text-xs text-[#ffdca0]">{branch} · Year {year} · {experience}</p><p className="mt-2 text-[11px] text-[#aaa8d0]">Available for all 9 Navratri nights</p></div></div><p className="mt-5 rounded-2xl border border-white/10 bg-black/10 p-3 text-sm leading-6 text-[#cbc9e8]">&ldquo;{bio || "Ready for Garba!"}&rdquo;</p><div className="mt-4 flex flex-wrap gap-1.5">{selectedStyles.slice(0, 4).map((style) => <span key={style} className="rounded-full bg-[#f35ca8]/15 px-2.5 py-1 text-[10px] font-semibold text-[#ffb5dc]">{style}</span>)}{selectedInterests.slice(0, 3).map((interest) => <span key={interest} className="rounded-full bg-white/[0.05] px-2.5 py-1 text-[10px] text-[#aaa8d0]">#{interest}</span>)}</div></div></div><p className="mt-4 text-center text-[11px] text-[#aaa8d0]">Looks good? Start discovering and keep your plans public.</p></div>}
           </div>
 
-          <div className="flex items-center justify-between gap-3 border-t border-white/10 p-5 sm:p-7"><Button variant="ghost" disabled={step === 1 || saving} onClick={() => setStep((current) => Math.max(1, current - 1))} className="px-3 text-xs">← Back</Button>{step < TOTAL_STEPS ? <Button onClick={() => setStep((current) => Math.min(TOTAL_STEPS, current + 1))} className="min-w-32">Continue <span aria-hidden="true">→</span></Button> : <Button onClick={handleFinish} disabled={saving} className="min-w-40">{saving ? "Saving profile…" : "Start discovering →"}</Button>}</div>
+          {formError && <p role="alert" className="px-5 pb-4 text-sm text-rose-200 sm:px-7">{formError}</p>}
+          <div className="flex items-center justify-between gap-3 border-t border-white/10 p-5 sm:p-7"><Button variant="ghost" disabled={step === 1 || saving} onClick={() => { setFormError(null); setStep((current) => Math.max(1, current - 1)); }} className="px-3 text-xs">← Back</Button>{step < TOTAL_STEPS ? <Button onClick={handleContinue} className="min-w-32">Continue <span aria-hidden="true">→</span></Button> : <Button onClick={handleFinish} disabled={saving} className="min-w-40">{saving ? "Saving profile…" : "Start discovering →"}</Button>}</div>
         </Card>
       </div>
     </AppShell>

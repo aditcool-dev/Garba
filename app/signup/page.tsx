@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Card } from "@/components/ui";
@@ -31,7 +31,7 @@ function GoogleIcon({ className = "w-5 h-5" }: { className?: string }) {
 
 export default function Signup() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithOtp, user, profile } = useAuth();
+  const { signInWithGoogle, signInWithOtp } = useAuth();
   const [email, setEmail] = useState("");
   const [linkSent, setLinkSent] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -50,13 +50,6 @@ export default function Signup() {
       setTimeout(() => setTapCount(0), 2500);
     }
   };
-
-  // If already logged in, redirect to discover or onboarding
-  useEffect(() => {
-    if (user && profile?.id === user.id) {
-      router.push(profile.onboarding_complete ? "/discover" : "/onboarding");
-    }
-  }, [user, profile, router]);
 
   const handleGoogle = async () => {
     setGoogleLoading(true);

@@ -1,5 +1,39 @@
 # Testing report
 
+## Current authentication/onboarding repair
+
+- **59 tests in 12 files**, TypeScript, lint and production build pass. `tests/auth-callback.test.ts` uses the actual browser/server Supabase SDK cookie/PKCE clients, not a mocked exchange implementation. It verifies S256 verifier equality, one exchange, complete/incomplete/absent profile routing, replay and expired-code recovery, genuine failure, preserved session on profile outage, network errors, college/confirmation/sample restrictions, middleware request/response cookie refresh and public proxy/origin handling. `tests/onboarding-auth.test.tsx` exercises the real controls, ages 18–22, empty editing, invalid/underage validation, actual UUID submission and failed/expired-session retry.
+- `scripts/verify-auth-flow.cjs` passes **11 groups** on the production build. TEST A/C/D runs at **360×844, 390×844 and 1280×800**: fresh browser, emulated Google account selection/consent, Supabase callback, actual server exchange with real S256 challenge/verifier verification, incomplete profile/onboarding (including an ID-like trigger scaffold name, replaced with a student-chosen public name), `empty → 2 → 22 → empty`, numeric keyboard hint, invalid/minimum validation, real authenticated profile save with numeric age 22 and Discover.
+- TEST B runs at the same sizes: completed profile directly to Discover, reload, client navigation through Matches/Chats/Profile/Discover, no onboarding flash when visiting onboarding, unchanged existing profile data and consumed-code recovery without a second exchange. Additional groups cover callback/app-load profile outages with signed-in retry, actual middleware refresh with a browser `Set-Cookie`, missing verifier/cancel/invalid/expired/network cases, preserved password/email-link providers, outsider rejection without an email request, guest onboarding protection and legacy Site URL callback forwarding. A separate **persistent mobile Chromium process is closed and reopened**, then restores the cookie and routes from login to Discover.
+- The driver serves an HTTPS Google/GoTrue/PostgREST fixture reachable by **both browser and Next server**. PostgreSQL 18 executes the actual 001–014 schema/triggers/queries/RLS in `garba_auth_tests`; the driver initializes only a fresh empty test DB and resets only its `_tests` DB. HTTP auth/provider responses are emulated, not hosted BMSCE Google authentication or actual email delivery. Realtime is closed for these auth-only checks. Mobile UA/touch/viewport emulation is not a physical phone or native Android keyboard test.
+- Screenshots/results: **`/tmp/omnirush/auth-flow/`**. Each width has `-age-empty.png`, `-age-22.png` and `-new-discover.png`; 390px includes expiry/cancel/invalid error UI and signed-in profile retry. Mobile empty/22 and error/retry screenshots were visually reviewed. `results.json` has 11 passing groups; `next.log` is the local production server log. Older `failure.png` is debugging evidence, not the final result. This release adds no migration.
+
+### Reproduce server-callback browser verification
+
+Create a disposable database named `garba_auth_tests` (or another name ending `_tests`) on the local PostgreSQL server. The driver needs `psql`, Chromium, OpenSSL-generated local TLS files, and a build whose public fixture URL matches its server. It starts/stops the Next server itself; port 3101 and fixture port 55440 must be available.
+
+```bash
+# Create the /tmp/omnirush parent first if it does not already exist.
+openssl req -x509 -newkey rsa:2048 -nodes \
+  -keyout /tmp/omnirush/auth-flow-fixture.key \
+  -out /tmp/omnirush/auth-flow-fixture.pem -days 2 \
+  -subj /CN=localhost -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1'
+
+NEXT_PUBLIC_SITE_URL=http://127.0.0.1:3101 \
+NEXT_PUBLIC_SUPABASE_URL=https://localhost:55440 \
+NEXT_PUBLIC_SUPABASE_ANON_KEY=auth-public-fixture-key-not-a-secret \
+npm run build
+
+GARBA_TEST_URL=http://127.0.0.1:3101 \
+GARBA_CHROME_PATH=/path/to/chromium \
+GARBA_PSQL=/path/to/psql \
+GARBA_PGHOST=/tmp/omnirush GARBA_PGPORT=55432 \
+GARBA_TEST_DATABASE=garba_auth_tests \
+node scripts/verify-auth-flow.cjs
+```
+
+The fixture process gives the Next child `NODE_EXTRA_CA_CERTS` pointing at the local certificate; TLS validation is not disabled in application/server code. Local browser contexts accept the fixture certificate. `GARBA_AUTH_CERT`, `GARBA_AUTH_KEY`, `GARBA_AUTH_FIXTURE_URL`, `GARBA_ARTIFACTS` override fixture paths/host/artifacts. Earlier browser-only transport drivers are historical UI evidence; they do not themselves verify the new **server** callback. Use this suite for authentication. For hosted configuration and final real Google consent/account checks, see `AUTH_SETUP.md`.
+
 ## Current tutorial layout repair
 
 - TypeScript, ESLint, production build and all **35 tests in 10 files** pass. The broader `verify-mobile-polish.cjs` suite passes all seven groups, including notifications/filters/action sheets and live Unmatch/Block, after the reusable sheet extension.

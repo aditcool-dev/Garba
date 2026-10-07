@@ -4,15 +4,15 @@ import type { Profile, Message, Match, Report, LikeKind, ReportReason, IncomingI
 import { announceRelationshipChange, clearPairCache } from "../relationship-events";
 import { normalizeProfile, normalizeProfiles, PROFILE_FIELDS } from "../profiles";
 import { ownedChannel } from "../realtime";
+import { getSupabaseUrl, getSupabaseAnonKey, isSupabaseConfigured } from "./config";
+
+export { getSupabaseUrl, getSupabaseAnonKey, isSupabaseConfigured } from "./config";
 
 let instance: SupabaseClient | null = null;
-export function getSupabaseUrl(): string { return process.env.NEXT_PUBLIC_SUPABASE_URL || ""; }
-export function getSupabaseAnonKey(): string { return process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""; }
-export function isSupabaseConfigured(): boolean {
-  try { return new URL(getSupabaseUrl()).protocol === "https:" && getSupabaseAnonKey().length > 20; } catch { return false; }
-}
 export function getSupabaseClient(): SupabaseClient | null {
   if (!isSupabaseConfigured()) return null;
+  // @supabase/ssr owns PKCE and persistent cookie storage. The callback is a
+  // server route, so no browser client ever renders/exchanges its OAuth code.
   return instance ||= createBrowserClient(getSupabaseUrl(), getSupabaseAnonKey());
 }
 function client(): SupabaseClient {
@@ -57,6 +57,20 @@ export const db = {
   },
   async getProfileById(id: string): Promise<Profile | null> {
     return normalizeProfile(check(await client().from("profiles").select(PROFILE_FIELDS).eq("id", id).maybeSingle(), "profile"));
+  },
+  async getAccountProfile(id: string): Promise<{ profile: Profile | null; onboardingComplete: boolean }> {
+    const row = check(await client().from("profiles").select(PROFILE_FIELDS).eq("id", id).maybeSingle(), "account profile");
+    const profile = normalizeProfile(row);
+    // Email signup can scaffold the name from an ID-like college email local
+    // part. Let an incomplete account choose a public name, preserving its
+    // other valid draft fields without displaying/saving that identifier.
+    if (row && !profile && row.onboarding_complete !== true) {
+      const draft = normalizeProfile({ ...row, first_name: "Student" });
+      if (draft) return { profile: { ...draft, first_name: "" }, onboardingComplete: false };
+    }
+    // An unreadable existing row is an error, not evidence of a new account.
+    if (row && !profile) throw new Error("Could not load your existing profile.");
+    return { profile, onboardingComplete: row?.onboarding_complete === true };
   },
   async upsertProfile(profile: Partial<Profile> & { id: string }): Promise<Profile> {
     // Server-managed flags cannot be supplied by an ordinary client.

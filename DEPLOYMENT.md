@@ -1,5 +1,7 @@
 # Deployment checklist
 
+- **Authentication/onboarding repair:** deploy/rebuild the Next application; no new SQL is required. The server route `app/auth/callback/route.ts` must replace the old callback page, and `middleware.ts` must run on the host. Follow `AUTH_SETUP.md` for exact Supabase application redirect URLs, Google's separate Supabase callback URI, proxy/public origin configuration and Google Branding name/logo/domain verification. These hosted dashboard changes and live BMSCE OAuth verification were not performed in the local workspace.
+
 - **Search/receipt release:** run the entire SQL in `supabase/migrations/014_message_receipts.sql` after migrations 001–013, then deploy/rebuild the frontend. It is idempotent, requires no reseeding, and preserves prior message epochs. The new frontend requires the delivered column, receipt preference, receipt/unread RPCs and idempotent send RPC, so SQL must come first.
 
 - Follow the ordered audit/cleanup/010–013 repair/seeding steps in `HEALTH_CHECK.md` before releasing this frontend. If 010–012 are already applied, this polish requires only `supabase/migrations/013_qualify_vibe_quota.sql` for the existing Vibe SQL ambiguity; no reseeding is needed.

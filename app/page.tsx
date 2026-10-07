@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui";
@@ -47,15 +47,6 @@ export default function Home() {
   const router = useRouter();
   const { user } = useAuth();
   const [tapCount, setTapCount] = useState(0);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const search = window.location.search;
-      if (search.includes("code=")) {
-        router.replace(`/auth/callback${search}`);
-      }
-    }
-  }, [router]);
 
   const handleSecretTap = (e: React.MouseEvent) => {
     const next = tapCount + 1;

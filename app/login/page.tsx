@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button, Card } from "@/components/ui";
@@ -31,7 +31,7 @@ function GoogleIcon({ className = "w-5 h-5" }: { className?: string }) {
 
 export default function Login() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithOtp, signInWithPassword, user, profile } = useAuth();
+  const { signInWithGoogle, signInWithOtp, signInWithPassword } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [linkSent, setLinkSent] = useState(false);
@@ -52,13 +52,6 @@ export default function Login() {
       setTimeout(() => setTapCount(0), 2500);
     }
   };
-
-  // If already logged in, redirect to discover immediately
-  useEffect(() => {
-    if (user && profile?.id === user.id) {
-      router.push(profile.onboarding_complete ? "/discover" : "/onboarding");
-    }
-  }, [user, profile, router]);
 
   const handleGoogle = async () => {
     setGoogleLoading(true);
@@ -94,12 +87,10 @@ export default function Login() {
     setError(null);
     setMessage(null);
 
-    const { error: err, onboardingComplete } = await signInWithPassword(email, password);
+    const { error: err } = await signInWithPassword(email, password);
     setLoading(false);
     if (err) {
       setError(err);
-    } else {
-      router.push(onboardingComplete ? "/discover" : "/onboarding");
     }
   };
 
