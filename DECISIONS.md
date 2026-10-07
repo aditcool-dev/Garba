@@ -2,6 +2,12 @@
 
 The dated entries record implementation history. The health-check section below is the current deployment/auth/sample-data contract.
 
+## Discover controls refinement — 7 October 2026
+
+- Remove the solid background class from the shared Discover controls wrapper so the page background flows behind search, tabs and helper text. The wrapper provides spacing/sticky positioning; search and tabs have their own styled surfaces.
+- The empty-state Sent action is labelled `Review Sent (count)`, parallel to `Review Passed (count)`.
+- TypeScript, lint and production build pass. The seven-group mobile-polish browser suite passes at 360/390/768/1280px; mobile/desktop Explore and empty-state screenshots were reviewed. Additional browser checks at 360/390/1280px confirm a fully transparent wrapper, padded search, equal tab widths, selected Explore and `Review Sent (17)` opening the 17-person Sent grid. Screenshots are in `/tmp/omnirush/mobile-polish/`.
+
 ## Tutorial layout repair — 7 October 2026
 
 - The common nine-step tutorial used `BottomSheet`'s sticky header inside the same scroll region as the animated demo. Scrolling moved the card underneath the instruction; the fixed-height demo, duplicated step text, separate Skip control and navigation also competed for mobile height. The repair changes the shared layout rather than any individual step.
