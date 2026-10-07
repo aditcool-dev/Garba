@@ -27,7 +27,7 @@ beforeEach(() => {
     return Response.json({});
   }));
 });
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 async function begin(origin = "https://garbamate.example") {
   const jar = new Map<string, { name: string; value: string; options: CookieOptions }>();
@@ -127,5 +127,22 @@ describe("SSR OAuth callback with the real Supabase PKCE/cookie clients", () => 
     expect(new URL(response.headers.get("location")!, publicOrigin).href).toBe(`${publicOrigin}/${value ? "discover" : "onboarding"}`);
     expect(requests.filter(r => r.url.searchParams.get("grant_type") === "pkce")).toHaveLength(1);
     expect(response.cookies.getAll().some(c => c.name.startsWith("sb-auth-fixture-auth-token") && c.value.startsWith("base64-"))).toBe(true);
+  });
+  it("traces HTTP, exchange cookie application, verified-user/profile checks and relative response without auth values", async () => {
+    vi.stubEnv("GARBA_AUTH_DIAGNOSTICS", "1");
+    const log = vi.spyOn(console, "info").mockImplementation(() => {});
+    const flow = await begin();
+    const response = await GET(request("/auth/callback?code=private-auth-code", flow.cookies));
+    const lines = log.mock.calls.map(([line]) => JSON.parse(line));
+    const events = lines.map(line => line.event);
+    for (const event of ["AUTH_CALLBACK_ENTERED", "AUTH_CALLBACK_CODE_PRESENT", "AUTH_CALLBACK_SUPABASE_CLIENT_CREATED", "AUTH_CALLBACK_EXCHANGE_STARTED", "AUTH_CALLBACK_COOKIE_WRITE_STARTED", "AUTH_CALLBACK_COOKIE_WRITE_FINISHED", "AUTH_CALLBACK_EXCHANGE_FINISHED", "AUTH_CALLBACK_GET_USER_STARTED", "AUTH_CALLBACK_GET_USER_FINISHED", "AUTH_CALLBACK_PROFILE_CHECK_STARTED", "AUTH_CALLBACK_PROFILE_CHECK_FINISHED", "AUTH_CALLBACK_REDIRECT"]) expect(events).toContain(event);
+    expect(events.indexOf("AUTH_CALLBACK_COOKIE_WRITE_FINISHED")).toBeLessThan(events.indexOf("AUTH_CALLBACK_EXCHANGE_FINISHED"));
+    expect(lines.find(line => line.event === "AUTH_CALLBACK_REDIRECT")).toMatchObject({ status: 303, destination: "/discover" });
+    expect(response.headers.get("X-GarbaMate-Auth-Version")).toBe("callback-trace-v1");
+    expect(response.headers.get("X-GarbaMate-Auth-Request")).toBeTruthy();
+    expect(JSON.stringify(lines)).not.toContain("private-auth-code");
+    expect(JSON.stringify(lines)).not.toContain(account.email);
+    expect(JSON.stringify(lines)).not.toContain(account.id);
+    expect(requests.filter(r => r.url.searchParams.get("grant_type") === "pkce")).toHaveLength(1);
   });
 });
