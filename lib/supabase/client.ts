@@ -4,7 +4,7 @@ import type { Profile, Message, Match, Report, LikeKind, ReportReason, IncomingI
 import { announceRelationshipChange, clearPairCache } from "../relationship-events";
 import { normalizeProfile, normalizeProfiles, PROFILE_FIELDS } from "../profiles";
 import { ownedChannel } from "../realtime";
-import { getSupabaseUrl, getSupabaseAnonKey, isSupabaseConfigured } from "./config";
+import { getSupabaseUrl, getSupabaseAnonKey, isSupabaseConfigured, SUPABASE_AUTH_COOKIE_OPTIONS } from "./config";
 
 export { getSupabaseUrl, getSupabaseAnonKey, isSupabaseConfigured } from "./config";
 
@@ -13,7 +13,7 @@ export function getSupabaseClient(): SupabaseClient | null {
   if (!isSupabaseConfigured()) return null;
   // @supabase/ssr owns PKCE and persistent cookie storage. The callback is a
   // server route, so no browser client ever renders/exchanges its OAuth code.
-  return instance ||= createBrowserClient(getSupabaseUrl(), getSupabaseAnonKey());
+  return instance ||= createBrowserClient(getSupabaseUrl(), getSupabaseAnonKey(), { cookies: SUPABASE_AUTH_COOKIE_OPTIONS });
 }
 function client(): SupabaseClient {
   const result = getSupabaseClient();

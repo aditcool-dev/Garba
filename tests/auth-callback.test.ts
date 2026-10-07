@@ -10,6 +10,16 @@ const token = (expiry: number) => [Buffer.from(JSON.stringify({ alg: "HS256", ty
 const session = (expiry = Math.floor(Date.now() / 1000) + 3600) => ({ access_token: token(expiry), refresh_token: "fixture-refresh", expires_in: 3600, expires_at: expiry, token_type: "bearer", user: account });
 const cookie = (value: unknown) => `base64-${Buffer.from(JSON.stringify(value)).toString("base64url")}`;
 const request = (path: string, cookies: Record<string, string> = {}) => new NextRequest(`https://garbamate.example${path}`, { headers: { cookie: Object.entries(cookies).map(([name, value]) => `${name}=${value}`).join("; ") } });
+const encodedStoredSession = (response: Response) => (response as Response & { cookies: { getAll: () => Array<{ name: string; value: string }> } }).cookies.getAll()
+    .filter(cookie => /^sb-auth-fixture-auth-token(?:\.\d+)?$/.test(cookie.name) && cookie.value)
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(cookie => cookie.value)
+    .join("");
+const storedSession = (response: Response) => {
+  const encoded = encodedStoredSession(response);
+  expect(encoded).toMatch(/^base64-/);
+  return JSON.parse(Buffer.from(encoded.slice("base64-".length), "base64url").toString("utf8")) as Record<string, unknown>;
+};
 let complete: boolean | null, tokenError: boolean, profileError: boolean;
 let requests: Array<{ url: URL; body: Record<string, string> | null }>;
 
@@ -33,7 +43,7 @@ async function begin(origin = "https://garbamate.example") {
   const jar = new Map<string, { name: string; value: string; options: CookieOptions }>();
   const client = createBrowserClient("https://auth-fixture.supabase.co", "fixture-public-key-never-a-secret", {
     isSingleton: false,
-    cookies: { getAll: () => [...jar.values()], setAll: values => values.forEach(value => jar.set(value.name, value)) },
+    cookies: { encode: "tokens-only", getAll: () => [...jar.values()], setAll: values => values.forEach(value => jar.set(value.name, value)) },
   });
   const { data, error } = await client.auth.signInWithOAuth({ provider: "google", options: { redirectTo: `${origin}/auth/callback`, skipBrowserRedirect: true } });
   expect(error).toBeNull();
@@ -52,6 +62,10 @@ describe("SSR OAuth callback with the real Supabase PKCE/cookie clients", () => 
     expect(exchanges).toHaveLength(1);
     expect(createHash("sha256").update(exchanges[0].body!.code_verifier).digest("base64url")).toBe(flow.authorize.searchParams.get("code_challenge"));
     expect(response.cookies.getAll().some(c => c.name.startsWith("sb-auth-fixture-auth-token") && c.value.startsWith("base64-"))).toBe(true);
+    const tokenOnly = storedSession(response);
+    expect(tokenOnly.user).toBeUndefined();
+    expect(JSON.stringify(tokenOnly).length).toBeLessThan(JSON.stringify(session()).length * 0.8);
+    expect(Buffer.byteLength(encodedStoredSession(response))).toBeLessThan(Buffer.byteLength(cookie(session())) * 0.8);
     expect(response.cookies.getAll().some(c => c.name.endsWith("code-verifier") && c.value === "")).toBe(true);
     expect(response.headers.get("cache-control")).toContain("no-store");
     expect(requests.some(r => r.url.pathname.endsWith("/user"))).toBe(true);
@@ -99,9 +113,11 @@ describe("SSR OAuth callback with the real Supabase PKCE/cookie clients", () => 
   it("middleware refreshes expired cookies on both the request and response", async () => {
     const response = await middleware(request("/discover", { "sb-auth-fixture-auth-token": cookie(session(Math.floor(Date.now() / 1000) - 60)) }));
     expect(requests.some(r => r.url.searchParams.get("grant_type") === "refresh_token")).toBe(true);
-    expect(response.cookies.get("sb-auth-fixture-auth-token")?.value).toBe(cookie(session()));
-    expect(response.headers.get("x-middleware-request-cookie")).toContain(cookie(session()));
+    expect(storedSession(response).user).toBeUndefined();
+    expect(response.headers.get("x-middleware-request-cookie")).toContain("sb-auth-fixture-auth-token=base64-");
     expect(response.headers.get("cache-control")).toContain("no-store");
+    expect(response.headers.get("expires")).toBe("0");
+    expect(response.headers.get("pragma")).toBe("no-cache");
   });
   it("forwards legacy Site URL callbacks before a browser client can consume their code", async () => {
     const response = await middleware(request("/?code=legacy"));

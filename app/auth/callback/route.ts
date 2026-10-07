@@ -12,12 +12,14 @@ export async function GET(request: NextRequest) {
   diagnostics.stage("AUTH_CALLBACK_CODE_PRESENT", { present: !!request.nextUrl.searchParams.get("code") });
   diagnostics.configuration();
   const pendingCookies = new Map<string, { name: string; value: string; options: CookieOptions }>();
+  const pendingResponseHeaders = new Map<string, string>();
   const redirect = (path: string) => {
     // Location permits a relative URI. The browser resolves this against its
     // public HTTPS origin, not the proxy's internal HTTP Host/port (e.g. 8080).
     // Targets below are fixed application paths, never a user-supplied URL.
     const response = new NextResponse(null, { status: 303, headers: { Location: path } });
     pendingCookies.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+    pendingResponseHeaders.forEach((value, name) => response.headers.set(name, value));
     response.headers.set("Cache-Control", "private, no-store");
     response.headers.set("Referrer-Policy", "no-referrer");
     diagnostics.responseHeaders(response.headers);
@@ -52,12 +54,13 @@ export async function GET(request: NextRequest) {
   try {
     client = createAuthServerClient({
       getAll: () => request.cookies.getAll(),
-      setAll: cookies => {
+      setAll: (cookies, headers) => {
         diagnostics.stage("AUTH_CALLBACK_COOKIE_WRITE_STARTED", { count: cookies.length });
         cookies.forEach(cookie => {
           request.cookies.set(cookie.name, cookie.value);
           pendingCookies.set(cookie.name, cookie);
         });
+        Object.entries(headers).forEach(([name, value]) => pendingResponseHeaders.set(name, value));
         diagnostics.stage("AUTH_CALLBACK_COOKIE_WRITE_FINISHED", { count: cookies.length });
       },
     }, diagnostics.fetch);

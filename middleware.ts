@@ -18,12 +18,13 @@ export async function middleware(request: NextRequest) {
   let response = NextResponse.next({ request });
   const client = createAuthServerClient({
     getAll: () => request.cookies.getAll(),
-    setAll: cookies => {
+    setAll: (cookies, headers) => {
       cookies.forEach(({ name, value }) => request.cookies.set(name, value));
       const previous = response.cookies.getAll();
       response = NextResponse.next({ request });
       previous.forEach(cookie => response.cookies.set(cookie));
       cookies.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+      Object.entries(headers).forEach(([name, value]) => response.headers.set(name, value));
     },
   });
   // Refresh and pass cookies to BOTH the downstream request and the browser.
