@@ -54,11 +54,18 @@ async function fixture(context, { reciprocal = false, failSnapshot = false } = {
     let status = 200;
     if (table === 'profiles') body = eq('id') ? profiles.find(p => p.id === eq('id')) : profiles;
     else if (table === 'get_public_profile_names') body = profiles.map(({id,first_name})=>({id,first_name}));
-    else if (table === 'like_user') {
+     else if (table === 'set_decision') {
+       const data=request.postDataJSON(), target=data.p_target;
+       if(failSnapshot&&data.p_decision!=='pass'){status=500;body={message:'Injected decision failure'};}
+       else if(data.p_decision==='pass'){for(let i=likes.length-1;i>=0;i--)if(likes[i].from_user===me.id&&likes[i].to_user===target)likes.splice(i,1);if(!passes.some(row=>row.from_user===me.id&&row.to_user===target))passes.push({from_user:me.id,to_user:target});body={status:'passed'};}
+       else {for(let i=passes.length-1;i>=0;i--)if(passes[i].from_user===me.id&&passes[i].to_user===target)passes.splice(i,1);likes.push({from_user:me.id,to_user:target,kind:data.p_decision==='vibe'?'garba_vibe':'interested'});if(reciprocal&&!matches.length){matches.push({id:'test-match',user_a:me.id,user_b:target,status:'active',created_at:new Date().toISOString(),chat_started_at:new Date().toISOString()});body={status:'matched',match_id:'test-match'};}else body={status:'sent'};}
+     }
+     else if (table === 'like_user') {
       if(failSnapshot){status=500;body={message:'Injected like failure'};}
       else{const data=request.postDataJSON();likes.push({from_user:me.id,to_user:data.target,kind:data.kind});if(reciprocal&&!matches.length)matches.push({id:'test-match',user_a:me.id,user_b:data.target,status:'active',created_at:new Date().toISOString(),chat_started_at:new Date().toISOString()});body={matched:reciprocal,match_id:reciprocal?'test-match':undefined};}
     }
-    else if(table==='discovery_blocked_ids')body=[];
+     else if(table==='discovery_blocked_ids')body=[];
+     else if(table==='discover_relationships')body=profiles.filter(p=>p.id!==me.id).map(p=>({profile:p,status:matches.some(m=>m.user_a===me.id&&m.user_b===p.id||m.user_b===me.id&&m.user_a===p.id)?'matched':passes.some(r=>r.from_user===me.id&&r.to_user===p.id)?'passed':likes.some(r=>r.from_user===me.id&&r.to_user===p.id)?'sent':likes.some(r=>r.from_user===p.id&&r.to_user===me.id)?'incoming':'new',like_kind:likes.find(r=>r.from_user===me.id&&r.to_user===p.id)?.kind||null,match_id:matches.find(m=>m.user_a===me.id&&m.user_b===p.id||m.user_b===me.id&&m.user_a===p.id)?.id||null,overlap_nights:9}));
     else if(table==='discover_feed'){
       const data=request.postDataJSON();
       body=profiles.filter(p=>p.id!==me.id&&!passes.some(r=>r.to_user===p.id)&&!likes.some(r=>r.from_user===me.id&&r.to_user===p.id)&&!matches.some(r=>r.user_b===p.id)).map(p=>({profile:p,score:50,rank_key:-Math.log((crypto.createHash('sha256').update(data.p_seed+p.id).digest().readUInt32BE(0)+.5)/4294967296)/.85})).sort((a,b)=>a.rank_key-b.rank_key).filter(r=>data.p_after_key===null||r.rank_key>data.p_after_key).slice(0,data.p_limit);
@@ -155,7 +162,7 @@ async function touchDrag(page, cdp, direction, commit=true, measure=false) {
     // The fixture records a like before the SDK sees its acknowledgement. Wait
     // for the resulting authoritative feed refresh before injecting pre-pass
     // history; otherwise that refresh can exclude the just-selected fixture row.
-    if(!process.env.GARBA_SKIP_REPEATS){await discover.getByRole('button',{name:/^All\s*30$/}).waitFor();await discover.waitForLoadState('networkidle');}
+    if(!process.env.GARBA_SKIP_REPEATS){await discover.getByRole('button',{name:/^Explore\s*\d+$/}).waitFor();await discover.waitForLoadState('networkidle');}
     const passedId=await topId(discover);
     const priorLike={id:'prior-like',from_user:me.id,to_user:passedId,kind:'interested',created_at:'2026-01-01T00:00:00Z'};
     store.likes.push(priorLike);

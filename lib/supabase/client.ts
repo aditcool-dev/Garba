@@ -1,6 +1,6 @@
 import { createBrowserClient } from "@supabase/ssr";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Profile, Message, Match, Report, LikeKind, ReportReason, IncomingInterest, NotificationItem } from "./types";
+import type { Profile, Message, Match, Report, LikeKind, ReportReason, IncomingInterest, NotificationItem, RelationshipRow } from "./types";
 import { announceRelationshipChange, clearPairCache } from "../relationship-events";
 import { normalizeProfile, normalizeProfiles, PROFILE_FIELDS } from "../profiles";
 import { ownedChannel } from "../realtime";
@@ -43,6 +43,14 @@ export const db = {
   async getProfiles(): Promise<Profile[]> {
     return normalizeProfiles(check(await client().from("profiles").select(PROFILE_FIELDS).eq("is_hidden", false).eq("is_suspended", false).eq("is_banned", false).eq("onboarding_complete", true), "profiles"));
   },
+  async getRelationshipRows(): Promise<RelationshipRow[]> {
+    const rows = check(await client().rpc("discover_relationships"), "relationship statuses") || [];
+    return rows.flatMap((row: { profile?: unknown; status?: string; like_kind?: LikeKind | null; match_id?: string | null; overlap_nights?: number }) => {
+      const profile = normalizeProfile(row.profile);
+      if (!profile || !["matched", "sent", "passed", "incoming", "new"].includes(row.status || "")) return [];
+      return [{ profile, status: row.status as RelationshipRow["status"], like_kind: row.like_kind, match_id: row.match_id, overlap_nights: Number(row.overlap_nights || 0) }];
+    });
+  },
   async getPublicProfileNames(): Promise<Array<{ first_name: string }>> {
     const rows = check(await client().rpc("get_public_profile_names"), "public names") || [];
     return rows.filter((row: { first_name?: unknown }) => typeof row.first_name === "string" && !/demo|bms-|\dBM\d{2}/i.test(row.first_name));
@@ -69,20 +77,23 @@ export const db = {
   async resetUserBio(id: string) { check(await client().from("profiles").update({ bio: "" }).eq("id", id), "reset bio"); },
   async resetUserPhoto(id: string) { check(await client().from("profiles").update({ photo_path: "🌸" }).eq("id", id), "reset photo"); },
   async likeProfile(_from: string, target: string, kind: LikeKind = "interested", _matchBack = false): Promise<{ matched: boolean; matchId?: string }> {
-    const data = check(await client().rpc("like_user", { target, kind }), "like_user");
+    const data = check(await client().rpc("set_decision", { p_target: target, p_decision: kind === "garba_vibe" ? "vibe" : "interested" }), "set decision");
     if (!data || data.error) throw new Error(data?.error || "Could not save interest");
     announceRelationshipChange();
-    return { matched: data.matched === true, matchId: data.match_id || undefined };
+    return { matched: data.status === "matched" || data.matched === true, matchId: data.match_id || undefined };
   },
   async passProfile(from: string, to: string) {
-    // Preserve incoming likes so Undo does not need to impersonate the sender.
-    check(await client().from("likes").delete().eq("from_user", from).eq("to_user", to), "cancel outgoing like");
-    check(await client().from("passes").upsert({ from_user: from, to_user: to }, { onConflict: "from_user,to_user" }), "pass");
+    check(await client().rpc("set_decision", { p_target: to, p_decision: "pass" }), "set pass");
     const likes = cached<Array<{ from_user: string; to_user: string }>>("garbamate_likes", []).filter(row => row.from_user !== from || row.to_user !== to);
     cache("garbamate_likes", likes);
     const passes = cached<Array<{ from_user: string; to_user: string }>>("garbamate_passes", []).filter(row => row.from_user !== from || row.to_user !== to);
     cache("garbamate_passes", [...passes, { from_user: from, to_user: to }]);
     this.broadcastInterestDismissed(from, to);
+  },
+  async setDecision(target: string, decision: "interested" | "vibe" | "pass" | "clear") {
+    const data = check(await client().rpc("set_decision", { p_target: target, p_decision: decision }), "set decision");
+    announceRelationshipChange();
+    return { status: data?.status as RelationshipRow["status"], matchId: data?.match_id || undefined };
   },
   async getOutgoingLikedUserIds(userId: string): Promise<Set<string>> {
     const rows = check(await client().from("likes").select("to_user").eq("from_user", userId), "outgoing likes") || [];
@@ -151,9 +162,12 @@ export const db = {
   },
   async getReports(): Promise<Report[]> { return check(await client().from("reports").select("*").order("created_at", { ascending: false }), "reports") || []; },
   async reviewReport(id: string, status: string) { check(await client().from("reports").update({ status, reviewed_at: new Date().toISOString() }).eq("id", id), "review report"); },
-  async getUserNotifications(_userId: string): Promise<NotificationItem[]> { return check(await client().rpc("get_user_notifications"), "notifications") || []; },
-  async markNotificationRead(_userId: string, id: string) { if (id.startsWith("message:")) await this.markChatRead(id.slice(8)); },
-  async clearAllNotifications(_userId: string) { check(await client().rpc("mark_all_chats_read"), "read all chats"); },
+  async getUserNotifications(_userId: string): Promise<NotificationItem[]> {
+    const rows = check(await client().rpc("get_relationship_notifications"), "notifications") || [];
+    return rows.map((row: { id: string; type: NotificationItem["type"]; actor_id?: string; match_id?: string; like_kind?: LikeKind; created_at: string; read: boolean; sender_first_name?: string; sender_photo_path?: string | null; sender_branch?: string; sender_year?: number; overlap_nights?: number; unread_count?: number }) => ({ id: row.id, user_id: _userId, type: row.type, title: row.type === "interest" ? "Interest" : row.type === "match" ? "It’s a Garba Match!" : row.type === "unmatch" ? "Match update" : "New message", body: row.type === "interest" ? `${row.sender_first_name || "Someone"} is interested in dancing with you` : row.type === "unmatch" ? "This match is no longer active" : row.type === "match" ? "You both picked each other" : "You have a new message", sender_id: row.actor_id, sender_name: row.sender_first_name, sender_photo: row.sender_photo_path, match_id: row.match_id, created_at: row.created_at, read: row.read, like_kind: row.like_kind, overlap_nights: row.overlap_nights, unread_count: row.unread_count }));
+  },
+  async markNotificationRead(_userId: string, id: string) { check(await client().rpc("mark_relationship_notification", { p_id: id }), "read notification"); },
+  async clearAllNotifications(_userId: string) { check(await client().rpc("mark_all_relationship_notifications"), "read notifications"); },
   subscribeToMatches(userId: string, changed: (match?: Match) => void) {
     const stop = subscription(`active-matches:${userId}`, channel => {
       channel.on("postgres_changes", { event: "*", schema: "public", table: "matches", filter: `user_a=eq.${userId}` }, payload => changed(payload.new as Match));
@@ -177,7 +191,8 @@ export const db = {
   },
   subscribeToNotifications(userId: string, changed: () => void) {
     return subscription(`notifications:${userId}`, channel => {
-      channel.on("postgres_changes", { event: "*", schema: "public", table: "messages" }, changed);
+      channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "notification_events", filter: `recipient_id=eq.${userId}` }, changed);
+      channel.on("postgres_changes", { event: "UPDATE", schema: "public", table: "notification_events", filter: `recipient_id=eq.${userId}` }, changed);
     });
   },
   broadcastInterestDismissed(_from: string, _to: string) { announceRelationshipChange(); },

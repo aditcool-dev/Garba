@@ -53,3 +53,4 @@ export { BottomSheet } from "./bottom-sheet";
 export { NightStrip } from "./night-strip";
 export { ProfileCard, ProfileCardActions, ProfileCardBody, ProfileCardHeader } from "./profile-card";
 export { ScoreRing } from "./score-ring";
+export { GlassPanel } from "./glass-panel";

@@ -21,14 +21,16 @@ import { ensureProfileDecoded, preloadProfileImage } from "@/lib/profile-images"
 import { FpsMeter } from "@/components/fps-meter";
 import type { TutorialCloseReason } from "@/components/discover-tutorial";
 import { AvatarFallback, Badge, Button, Card, NightStrip, ScoreRing, VerifiedBadge } from "@/components/ui";
+import { RelationshipGrid } from "@/components/relationship-grid";
 import { BRANCHES } from "@/config/branches";
 import { compatibilityScore } from "@/lib/scoring";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
-import type { Match, Profile } from "@/lib/supabase/types";
+import type { Match, Profile, RelationshipRow, RelationshipStatus } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
+import { removeDecidedProfile } from "@/lib/discover-stack";
 
-type StatusFilter = "All" | "matches" | "incoming" | "sent" | "passed";
+type StatusFilter = "Explore" | "matches" | "sent" | "passed";
 
 const STYLE_OPTIONS = ["Traditional Garba", "Bollywood Garba", "Dandiya", "2-Taali", "3-Taali", "Fast Garba", "Any"];
 const EXPERIENCE_OPTIONS = ["Beginner", "Intermediate", "Advanced", "Just for the fun 😂"];
@@ -99,10 +101,12 @@ export default function Discover() {
   const feedProfileKey=JSON.stringify(myProfile?{...myProfile,has_seen_discover_tutorial:undefined,updated_at:undefined}:null);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [catalog,setCatalog]=useState<Profile[]>([]);
+  const [relationshipRows, setRelationshipRows] = useState<RelationshipRow[]>([]);
   const [guestNames, setGuestNames] = useState<string[]>([]);
   const [index, setIndex] = useState(0);
   const [matchPopup, setMatchPopup] = useState<{ person: Profile; matchId: string } | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailRow, setDetailRow] = useState<RelationshipRow | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [filterBranch, setFilterBranch] = useState("All");
@@ -111,7 +115,7 @@ export default function Discover() {
   const [filterStyle, setFilterStyle] = useState("All");
   const [filterExperience, setFilterExperience] = useState("All");
   const [onlyMyNights, setOnlyMyNights] = useState(false);
-  const [filterStatus, setFilterStatus] = useState<StatusFilter>("All");
+  const [filterStatus, setFilterStatus] = useState<StatusFilter>("Explore");
   const [loginPrompt, setLoginPrompt] = useState(false);
   const [incomingCount, setIncomingCount] = useState(0);
   const [incomingSenderIds, setIncomingSenderIds] = useState<Set<string>>(new Set());
@@ -135,6 +139,7 @@ export default function Discover() {
   const topCard = useRef<SwipeHandle>(null);
   const [restoredCards, setRestoredCards] = useState<Profile[]>([]);
   const [undoPass, setUndoPass] = useState<{ person: Profile; reverse: Promise<() => Promise<void>> } | null>(null);
+  const [gridUndo, setGridUndo] = useState<RelationshipRow | null>(null);
   const undoBusy = useRef(false);
   const [returningId, setReturningId] = useState<string | null>(null);
   const mutationChains = useRef(new Map<string, Promise<unknown>>());
@@ -166,13 +171,14 @@ export default function Discover() {
     }
 
     if (!myProfile?.onboarding_complete || myProfile.id!==user.id) return;
-    const [incoming, outgoingLikes, outgoingPasses, blocked, available, allProfiles] = await Promise.all([
+    const [incoming, outgoingLikes, outgoingPasses, blocked, available, allProfiles, relationships] = await Promise.all([
       db.getIncomingInterests(user.id),
       db.getOutgoingLikedUserIds(user.id),
       db.getOutgoingPassedUserIds(user.id),
       db.getBlockedUserIds(user.id),
       discoverySnapshot(myProfile, feedSeed),
       db.getProfiles(),
+      db.getRelationshipRows(),
     ]);
     await waitForSwipeIdle();
     if (ticket !== dataRequest.current) return;
@@ -189,6 +195,7 @@ export default function Discover() {
     });
     setIncomingCount(incoming.length);
     setCatalog(allProfiles);
+    setRelationshipRows(relationships);
     setIncomingSenderIds(new Set(incoming.map((item) => item.from_user)));
     setLikedUserIds(outgoingLikes);
     setPassedUserIds(outgoingPasses);
@@ -225,34 +232,19 @@ export default function Discover() {
     setReturningId(null);
   }, [filterBranch, filterYear, filterNight, filterStyle, filterExperience, onlyMyNights, filterStatus, searchTerm]);
 
-  const statusCounts = useMemo(() => {
-    const counts=catalog.reduce((counts, profile) => {
-      const matched = matchByPartnerId.has(profile.id);
-      const incoming = incomingSenderIds.has(profile.id) && !matched;
-      const sent = likedUserIds.has(profile.id) && !matched && !incoming;
-      const passed = passedUserIds.has(profile.id) && !matched && !incoming;
-      if (matched) counts.matches += 1;
-      else if (incoming) counts.incoming += 1;
-      else if (sent) counts.sent += 1;
-      else if (passed) counts.passed += 1;
-      return counts;
-    }, { matches: 0, incoming: 0, sent: 0, passed: 0 });
-    return {...counts,matches:userMatches.length};
-  }, [catalog,userMatches,matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds]);
+  const statusById = useMemo(() => new Map(relationshipRows.map((row) => [row.profile.id, row])), [relationshipRows]);
+  const statusCounts = useMemo(() => relationshipRows.reduce((counts, row) => { if (row.status === "matched") counts.matches += 1; if (row.status === "sent") counts.sent += 1; if (row.status === "passed") counts.passed += 1; return counts; }, { matches: 0, sent: 0, passed: 0 }), [relationshipRows]);
 
-  const filteredProfiles = useMemo(() => (filterStatus === "matches" ? userMatches.flatMap((match)=>match.partner?[match.partner]:[]) : filterStatus === "All" ? profiles : catalog).filter((profile) => {
-    const matched = matchByPartnerId.has(profile.id);
-    const incoming = incomingSenderIds.has(profile.id) && !matched;
-    const sent = likedUserIds.has(profile.id) && !matched && !incoming;
-    const passed = passedUserIds.has(profile.id) && !matched && !incoming;
-    if (filterStatus === "matches" && !matched) return false;
-    if (filterStatus === "incoming" && !incoming) return false;
-    if (filterStatus === "sent" && !sent) return false;
-    if (filterStatus === "passed" && !passed) return false;
+  const filteredProfiles = useMemo(() => catalog.filter((profile) => {
+    const relationship = statusById.get(profile.id);
+    const status = relationship?.status || "new";
+    if (filterStatus === "matches" && status !== "matched") return false;
+    if (filterStatus === "sent" && status !== "sent") return false;
+    if (filterStatus === "passed" && status !== "passed") return false;
     if (blockedUserIds.has(profile.id) || profile.is_hidden || profile.is_suspended || profile.is_banned) return false;
-    if (filterStatus === "All" && (!myProfile || !eligibleCandidate(myProfile,profile,{liked:likedUserIds,passed:passedUserIds,matched:new Set(matchByPartnerId.keys()),blocked:blockedUserIds}))) return false;
+    if (!searchTerm.trim() && filterStatus === "Explore" && (!myProfile || !eligibleCandidate(myProfile,profile,{liked:likedUserIds,passed:passedUserIds,matched:new Set(matchByPartnerId.keys()),blocked:blockedUserIds}))) return false;
     const term = searchTerm.trim().toLowerCase();
-    if (term && ![profile.first_name, profile.branch, profile.experience, ...profile.styles, ...profile.interests].some((value) => value.toLowerCase().includes(term))) return false;
+    if (term && ![profile.first_name, profile.branch, ...profile.styles].some((value) => value.toLowerCase().includes(term))) return false;
     if (filterBranch !== "All" && profile.branch !== filterBranch) return false;
     if (filterYear !== "All" && profile.year !== filterYear) return false;
     if (filterNight !== "All" && !profile.available_nights.includes(filterNight)) return false;
@@ -260,12 +252,17 @@ export default function Discover() {
     if (filterExperience !== "All" && profile.experience !== filterExperience) return false;
     if (onlyMyNights && myProfile && !profile.available_nights.some((night) => myProfile.available_nights.includes(night))) return false;
     return true;
-  }), [profiles,catalog,userMatches, matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds, blockedUserIds, filterStatus, searchTerm, filterBranch, filterYear, filterNight, filterStyle, filterExperience, onlyMyNights, myProfile]);
+  }), [catalog,statusById,profiles, matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds, blockedUserIds, filterStatus, searchTerm, filterBranch, filterYear, filterNight, filterStyle, filterExperience, onlyMyNights, myProfile]);
 
   const orderedProfiles = filteredProfiles;
+  const gridRows = relationshipRows.filter((row) => filteredProfiles.some((profile) => profile.id === row.profile.id));
+  const showGrid = Boolean(searchTerm.trim()) || filterStatus !== "Explore";
 
-  const stack = [...restoredCards.filter((profile)=>!blockedUserIds.has(profile.id)), ...orderedProfiles.filter((profile)=>(filterStatus!=="All"||!consumed.has(profile.id))&&!restoredCards.some((restored)=>restored.id===profile.id))];
+  const restoredStack = restoredCards.filter((profile) => !blockedUserIds.has(profile.id));
+  const freshStack = orderedProfiles.filter((profile) => !restoredCards.some((restored) => restored.id === profile.id));
+  const stack = [...restoredStack, ...[...consumed].reduce((items, id) => removeDecidedProfile(items, id), freshStack)];
   const person = stack[0];
+  const panelPerson = detailRow?.profile || person;
   const myNights = myProfile?.available_nights || EMPTY_NIGHTS;
 
   const scoreFor = (target: Profile) => myProfile ? compatibilityScore({
@@ -360,6 +357,32 @@ export default function Discover() {
     });
   }, [user, restoredCards, likedUserIds, passedUserIds, incomingSenderIds, showToast,refetchMatches]);
 
+  const handleGridDecision = useCallback(async (row: RelationshipRow, decision: "interested" | "vibe" | "pass") => {
+    if (!user) return;
+    const previous = relationshipRows;
+    const nextStatus: RelationshipStatus = decision === "pass" ? "passed" : "sent";
+    setRelationshipRows((rows) => rows.map((item) => item.profile.id === row.profile.id ? { ...item, status: nextStatus, like_kind: decision === "vibe" ? "garba_vibe" : item.like_kind } : item));
+    if (decision === "vibe") setVibeCount((count) => count + 1);
+    setDetailRow(null); setDetailsOpen(false);
+    if (decision === "pass") setGridUndo(row);
+    try {
+      const result = await db.setDecision(row.profile.id, decision);
+      if (result.status === "matched" && result.matchId) { await refetchMatches(); setMatchPopup({ person: row.profile, matchId: result.matchId }); }
+      else showToast(decision === "pass" ? "Moved to Passed · They won't be told · Undo" : decision === "vibe" ? `⭐ Vibe sent to ${row.profile.first_name}` : `Interest sent to ${row.profile.first_name}`);
+      void loadData();
+    } catch (error) {
+      console.error("[discover] grid decision", error);
+      setRelationshipRows(previous); if (decision === "vibe") setVibeCount((count) => Math.max(0, count - 1)); showToast("Couldn’t save that decision. Please try again.");
+    }
+  }, [user, relationshipRows, showToast, refetchMatches, loadData]);
+
+  const undoGridPass = useCallback(async () => {
+    if (!gridUndo) return;
+    const row = gridUndo; setGridUndo(null);
+    setRelationshipRows((rows) => rows.map((item) => item.profile.id === row.profile.id ? { ...item, status: "sent", like_kind: row.like_kind || "interested" } : item));
+    try { await db.setDecision(row.profile.id, row.like_kind === "garba_vibe" ? "vibe" : "interested"); void loadData(); } catch { showToast("Couldn’t undo that move. Please try again."); void loadData(); }
+  }, [gridUndo, loadData, showToast]);
+
   const triggerSwipe = useCallback((direction: SwipeDecision) => {
     if (undoBusy.current || topCard.current?.isBusy()) return;
     swipeHaptic();
@@ -443,7 +466,7 @@ export default function Discover() {
   }, [user, person, triggerSwipe, detailsOpen, filtersOpen, matchPopup,tutorialOpen,howItWorksOpen]);
 
   const resetFilters = () => {
-    setSearchTerm(""); setFilterBranch("All"); setFilterYear("All"); setFilterNight("All"); setFilterStyle("All"); setFilterExperience("All"); setOnlyMyNights(false); setFilterStatus("All"); setIndex(0);
+    setSearchTerm(""); setFilterBranch("All"); setFilterYear("All"); setFilterNight("All"); setFilterStyle("All"); setFilterExperience("All"); setOnlyMyNights(false); setFilterStatus("Explore"); setIndex(0);
   };
 
   const renderMatchModal = matchPopup ? (
@@ -473,14 +496,15 @@ export default function Discover() {
       <div className="discover-floor relative mx-auto max-w-6xl pb-36 lg:pb-12" inert={tutorialOpen || howItWorksOpen}>
         <FpsMeter />
         {feedError&&<div role="alert" className="mb-3 rounded-xl bg-[#211952] p-4 text-sm">{feedError}<button type="button" className="ml-3 underline" onClick={()=>void loadData()}>Retry</button></div>}
-        <DiscoverFeedback ref={feedback} />
-        <PassUndoToast record={undoPass} onUndo={()=>void handleUndo()} />
+         <DiscoverFeedback ref={feedback} />
+         <PassUndoToast record={undoPass} onUndo={()=>void handleUndo()} />
+         {gridUndo && <div role="status" className="fixed left-1/2 top-36 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-white/15 bg-[#211952] px-4 py-2 text-xs text-white shadow-xl">Moved to Passed · <button type="button" onClick={() => void undoGridPass()} className="font-bold text-[#73f4df]">Undo</button></div>}
 
         <div className="mb-5 flex flex-wrap items-end justify-between gap-3 lg:mb-6">
           <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#ffc83d]">Your private floor</p><h1 className="display-font mt-1 text-3xl font-bold tracking-[-0.06em] text-white sm:text-4xl">Find your rhythm.</h1><p className="mt-1.5 text-xs text-[#aaa8d0]">One card, one vibe, one night at a time.</p></div>
            <div className="flex items-center gap-2">
              <span className="hidden rounded-full border border-[#2de2c4]/25 bg-[#2de2c4]/10 px-2.5 py-1.5 text-[10px] font-bold text-[#73f4df] sm:inline-flex">{orderedProfiles.length} on the floor</span>
-             <button type="button" onClick={replayTutorial} aria-label="How it works" className="touch-target inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]">?</button>
+              <button type="button" onClick={replayTutorial} aria-label="A 1-minute tour of swiping, matches and chat" title="A 1-minute tour of swiping, matches and chat" className="touch-target inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]">ⓘ <span className="ml-1 hidden sm:inline">How it works</span><span className="ml-1 sm:hidden">Guide</span></button>
              <button type="button" onClick={shuffleFeed} aria-label="Shuffle feed" className="touch-target inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]">⤨ <span className="hidden sm:inline">Shuffle</span></button>
              <button type="button" onClick={()=>setFiltersOpen(true)} className="touch-target inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]"><span aria-hidden="true">☷</span> Filters</button>
            </div>
@@ -490,39 +514,40 @@ export default function Discover() {
 
         <div className="mb-4 flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
           <div className="relative min-w-[190px] flex-1"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#73789e]">⌕</span><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by name, branch, or style" aria-label="Search by name, branch, or style" className="h-11 w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-xs text-white outline-none placeholder:text-[#73789e] focus:border-[#ffc83d]/60" /></div>
-          {[{ label: "All", value: "All" as StatusFilter, count: profiles.length }, { label: "Matches", value: "matches" as StatusFilter, count: statusCounts.matches }, { label: "Passed", value: "passed" as StatusFilter, count: statusCounts.passed }].map((tab) => <button key={tab.value} type="button" onClick={() => setFilterStatus(tab.value)} aria-pressed={filterStatus === tab.value} className={cn("inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition", filterStatus === tab.value ? "border-[#ffc83d]/55 bg-[#ffc83d]/15 text-[#ffe49a]" : "border-white/10 bg-white/[0.035] text-[#aaa8d0] hover:text-white")}>{tab.label}<span className="rounded-full bg-black/15 px-1.5 py-0.5 text-[10px]">{tab.count}</span></button>)}
-        </div>
+           {[{ label: "Explore", value: "Explore" as StatusFilter, count: relationshipRows.filter((row) => row.status === "new" || row.status === "incoming").length }, { label: "Sent", value: "sent" as StatusFilter, count: statusCounts.sent }, { label: "Matches", value: "matches" as StatusFilter, count: statusCounts.matches }, { label: "Passed", value: "passed" as StatusFilter, count: statusCounts.passed }].map((tab) => <button key={tab.value} type="button" onClick={() => setFilterStatus(tab.value)} aria-pressed={filterStatus === tab.value} className={cn("inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition", filterStatus === tab.value ? "border-[#ffc83d]/55 bg-[#ffc83d]/15 text-[#ffe49a]" : "border-white/10 bg-white/[0.035] text-[#aaa8d0] hover:text-white")}>{tab.label}<span className="rounded-full bg-black/15 px-1.5 py-0.5 text-[10px]">{tab.count}</span></button>)}
+         </div>
+         <p className="-mt-2 mb-5 text-xs text-[#aaa8d0]">{searchTerm ? "Search results across everyone on your floor." : filterStatus === "sent" ? "People you showed interest in. Waiting for them to say yes." : filterStatus === "passed" ? "People you skipped. Changed your mind? Tap Interested." : filterStatus === "matches" ? "You both picked each other. Say hello!" : "Meet new people and anyone who is already interested in you."}</p>
 
         <div className="grid items-start gap-8 lg:grid-cols-[190px_minmax(360px,460px)_minmax(230px,1fr)] xl:grid-cols-[210px_minmax(380px,460px)_280px]">
-          <aside className="hidden lg:block"><div className="sticky top-6 space-y-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#aaa8d0]">Tune your floor</p><h2 className="display-font mt-1 text-lg font-bold text-white">Your filters</h2></div><div className="space-y-2"><button type="button" onClick={() => setFiltersOpen(true)} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-[#ffc83d]/35 bg-[#ffc83d]/10 px-3 text-left text-xs font-bold text-[#ffe49a]">Open filter sheet <span>→</span></button><button type="button" onClick={() => { setFilterStatus("All"); setIndex(0); }} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-left text-xs font-bold text-[#cbc9e8]">All students <span>{profiles.length}</span></button><button type="button" onClick={() => setOnlyMyNights((current) => !current)} className={cn("flex min-h-12 w-full items-center justify-between rounded-2xl border px-3 text-left text-xs font-bold transition", onlyMyNights ? "border-[#ffc83d]/45 bg-[#ffc83d]/10 text-[#ffe49a]" : "border-white/10 bg-white/[0.035] text-[#cbc9e8]")}>Only my nights <span>{onlyMyNights ? "✓" : "○"}</span></button></div><div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#aaa8d0]"><span className="text-[#ffc83d]">← → ↑</span> keyboard shortcuts<br />Swipe right to be interested<br />Swipe left to pass</div><button type="button" onClick={resetFilters} className="text-xs font-bold text-[#ffc83d] hover:underline">Reset all filters</button></div></aside>
+           <aside className="hidden lg:block"><div className="sticky top-6 space-y-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#aaa8d0]">Tune your floor</p><h2 className="display-font mt-1 text-lg font-bold text-white">Your filters</h2></div><div className="space-y-2"><button type="button" onClick={() => setFiltersOpen(true)} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-[#ffc83d]/35 bg-[#ffc83d]/10 px-3 text-left text-xs font-bold text-[#ffe49a]">Open filter sheet <span>→</span></button><button type="button" onClick={() => { setFilterStatus("Explore"); setIndex(0); }} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-left text-xs font-bold text-[#cbc9e8]">Explore new people <span>{profiles.length}</span></button><button type="button" onClick={() => setOnlyMyNights((current) => !current)} className={cn("flex min-h-12 w-full items-center justify-between rounded-2xl border px-3 text-left text-xs font-bold transition", onlyMyNights ? "border-[#ffc83d]/45 bg-[#ffc83d]/10 text-[#ffe49a]" : "border-white/10 bg-white/[0.035] text-[#cbc9e8]")}>Only my nights <span>{onlyMyNights ? "✓" : "○"}</span></button></div><div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#aaa8d0]"><span className="text-[#ffc83d]">← → ↑</span> keyboard shortcuts<br />Swipe right to be interested<br />Swipe left to pass</div><button type="button" onClick={resetFilters} className="text-xs font-bold text-[#ffc83d] hover:underline">Reset all filters</button></div></aside>
 
-          <section className="min-w-0" aria-label="Discover profile cards">
-            {person ? <div className="relative mx-auto w-full max-w-[460px]">
+           <section className="min-w-0" aria-label="Discover profile cards">
+             {showGrid ? <RelationshipGrid rows={gridRows} myProfile={myProfile} loading={!relationshipRows.length && !feedError} onDecision={(row, decision) => void handleGridDecision(row, decision)} onOpen={(row) => { setDetailRow(row); setDetailsOpen(true); }} /> : person ? <div className="relative mx-auto w-full max-w-[460px]">
               <motion.div className="discover-stack relative" animate={stackAnimation}>
-                {stack.slice(0, 3).map((profile, depth) => <SwipeCard key={profile.id} ref={depth === 0 ? topCard : undefined} depth={depth} progress={swipeProgress} disabled={tutorialOpen || howItWorksOpen || matchByPartnerId.has(profile.id)} returning={returningId === profile.id} person={profile} score={scoreFor(profile)} myNights={myNights} onOpenDetails={openDetails} onPass={triggerPass} onInterested={triggerLike} isMatched={matchByPartnerId.has(profile.id)} canDecide={checkDecision} onDecide={completeDecision} />)}
+                 {stack.slice(0, 3).map((profile, depth) => <SwipeCard key={profile.id} ref={depth === 0 ? topCard : undefined} depth={depth} progress={swipeProgress} disabled={tutorialOpen || howItWorksOpen || matchByPartnerId.has(profile.id)} returning={returningId === profile.id} person={profile} status={statusById.get(profile.id)?.status} vibeSent={statusById.get(profile.id)?.like_kind === "garba_vibe"} score={scoreFor(profile)} myNights={myNights} onOpenDetails={openDetails} onPass={triggerPass} onInterested={triggerLike} isMatched={matchByPartnerId.has(profile.id)} canDecide={checkDecision} onDecide={completeDecision} />)}
               </motion.div>
               {matchByPartnerId.has(person.id)&&<div className="mt-3 flex justify-center"><MatchActions match={userMatches.find((match)=>match.id===matchByPartnerId.get(person.id))} profileId={person.id} name={person.first_name} visible /></div>}
               <p className="mt-3 text-center text-[10px] font-semibold text-[#73789e]">A fun score based on nights, styles, and interests — never a judgement.</p>
             </div> : <Card className="mx-auto max-w-[460px] border-dashed border-white/15 py-20 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-[#ffc83d]/30 bg-[#ffc83d]/10 text-3xl">✦</div><h2 className="display-font mt-5 text-2xl font-bold text-white">Looks like you&apos;ve explored everyone nearby 👀</h2><p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-[#aaa8d0]">Check back when more BMSCE students join.</p><Button className="mt-6" onClick={() => { resetFilters(); void loadData(); }}>Refresh the floor</Button></Card>}
 
-            {person && !matchByPartnerId.has(person.id) && <div className="discover-actions fixed inset-x-0 z-30 flex items-center justify-center gap-3 px-4 md:static md:mt-5 md:px-0">
+             {!showGrid && person && !matchByPartnerId.has(person.id) && <div className="discover-actions fixed inset-x-0 z-30 flex items-center justify-center gap-3 px-4 md:static md:mt-5 md:px-0">
               <motion.button type="button" whileTap={{ scale: .94 }} onClick={() => triggerSwipe("pass")} aria-label={`Pass on ${person.first_name}`} className="touch-target flex h-14 w-14 items-center justify-center rounded-full border border-white/12 bg-[#16123a] text-2xl text-[#aaa8d0] shadow-[0_10px_28px_rgba(0,0,0,.3)] hover:border-[#b46e82]/50">×</motion.button>
               <div className="vibe-pulse -translate-y-2"><motion.button type="button" whileTap={{ scale: .94 }} onClick={() => triggerSwipe("vibe")} aria-label={`Send Garba Vibe to ${person.first_name}`} className="touch-target flex h-[68px] w-[68px] items-center justify-center rounded-full border border-[#ffc83d]/45 bg-[linear-gradient(145deg,#ff2e93,#ff8a00_60%,#ffc83d)] text-2xl text-white shadow-[0_16px_40px_rgba(255,46,147,.28)]">⭐</motion.button></div>
               <motion.button type="button" whileTap={{ scale: .94 }} onClick={() => triggerSwipe("like")} aria-label={`Show interest in ${person.first_name}`} className="touch-target flex h-14 w-14 items-center justify-center rounded-full border border-[#2de2c4]/35 bg-[#123e4a] text-2xl text-[#73f4df] shadow-[0_10px_28px_rgba(0,0,0,.3)] hover:border-[#2de2c4]/60">♥</motion.button>
             </div>}
-            {person && <div className="mt-7 hidden justify-center gap-2 text-[10px] font-semibold text-[#73789e] md:flex"><span>Pass</span><span>•</span><span>⭐ {3 - vibeCount} Garba Vibes left today</span><span>•</span><span>Interested</span></div>}
+             {!showGrid && person && <div className="mt-7 hidden justify-center gap-2 text-[10px] font-semibold text-[#73789e] md:flex"><span>Pass</span><span>•</span><span>⭐ {3 - vibeCount} Garba Vibes left today</span><span>•</span><span>Interested</span></div>}
           </section>
 
           <aside className="hidden space-y-4 lg:block"><Card className="p-4"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#ffc83d]">Your nights</p><h2 className="display-font mt-1 text-xl font-bold text-white">Find the overlap</h2><p className="mt-1 text-[11px] leading-5 text-[#aaa8d0]">Gold dots show nights you both picked.</p><NightStrip nights={myNights} highlightedNights={myNights} className="mt-4" /></Card><Card className="p-4"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#f35ca8]">Your circle</p><div className="mt-3 flex items-center gap-3"><div className="flex -space-x-3">{userMatches.slice(0, 3).map((match) => <AvatarFallback key={match.id} src={match.partner?.photo_path} name={match.partner?.first_name || "Match"} size="sm" />)}</div><div><p className="text-sm font-bold text-white">{userMatches.length} matches</p><Link href="/matches" className="text-[10px] font-bold text-[#ffc83d]">Open circle →</Link></div></div></Card><div className="rounded-2xl border border-[#2de2c4]/20 bg-[#123e4a]/25 p-4 text-[11px] leading-5 text-[#b4d9d7]"><span className="font-bold text-[#73f4df]">Safe dancing, always.</span><br />Keep first meetups at the official event, with friends, in public.</div></aside>
         </div>
       </div>
 
-      {person && <BottomSheet open={detailsOpen} onClose={() => setDetailsOpen(false)} title={`${person.first_name}'s Garba vibe`} description="A little more context before you decide.">
-        <div className="space-y-5"><div className="relative h-56 overflow-hidden rounded-[24px]"><IllustratedProfileVisual person={person} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0a0820] p-4 pt-12"><h3 className="display-font text-2xl font-bold text-white">{person.first_name}, {person.age}</h3><p className="text-xs text-white/75">{person.branch} · Year {person.year}</p></div></div>
-          <div className="flex items-center justify-between">{person.is_verified && <VerifiedBadge />}<ScoreRing score={scoreFor(person)} size="sm" label="Garba compatibility" /></div>
-          <p className="text-sm leading-6 text-[#cbc9e8]">{person.bio || "Ready to share a few rounds on the floor."}</p><div className="flex flex-wrap gap-2">{person.styles.map((style) => <Badge key={style}>{style}</Badge>)}</div><NightStrip nights={person.available_nights} highlightedNights={person.available_nights.filter((night) => myNights.includes(night))} />
-          <div className="flex gap-2"><Button className="flex-1" onClick={() => { setDetailsOpen(false); triggerSwipe("like"); }}>Interested</Button><Link href={`/profile/${person.id}`} className="flex-1"><Button variant="secondary" className="w-full">View profile</Button></Link></div>
-        </div>
+       {panelPerson && <BottomSheet open={detailsOpen} onClose={() => { setDetailsOpen(false); setDetailRow(null); }} title={`${panelPerson.first_name}'s Garba vibe`} description="A little more context before you decide.">
+         <div className="space-y-5"><div className="relative h-56 overflow-hidden rounded-[24px]"><IllustratedProfileVisual person={panelPerson} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0a0820] p-4 pt-12"><h3 className="display-font text-2xl font-bold text-white">{panelPerson.first_name}, {panelPerson.age}</h3><p className="text-xs text-white/75">{panelPerson.branch} · Year {panelPerson.year}</p></div></div>
+           <div className="flex items-center justify-between">{panelPerson.is_verified && <VerifiedBadge />}<ScoreRing score={scoreFor(panelPerson)} size="sm" label="Garba compatibility" /></div>
+           <p className="text-sm leading-6 text-[#cbc9e8]">{panelPerson.bio || "Ready to share a few rounds on the floor."}</p><div className="flex flex-wrap gap-2">{panelPerson.styles.map((style) => <Badge key={style}>{style}</Badge>)}</div><NightStrip nights={panelPerson.available_nights} highlightedNights={panelPerson.available_nights.filter((night) => myNights.includes(night))} />
+           <div className="flex gap-2">{detailRow ? <><Button className="flex-1" onClick={() => void handleGridDecision(detailRow, "interested")}>Interested</Button><button type="button" className="min-h-11 rounded-full border border-[#ffc83d]/30 px-4 text-[#ffe49a]" onClick={() => void handleGridDecision(detailRow, "vibe")}>⭐</button></> : <Button className="flex-1" onClick={() => { setDetailsOpen(false); triggerSwipe("like"); }}>Interested</Button>}<Link href={`/profile/${panelPerson.id}`} className="flex-1"><Button variant="secondary" className="w-full">View profile</Button></Link></div>
+         </div>
       </BottomSheet>}
 
       <BottomSheet open={filtersOpen} onClose={() => setFiltersOpen(false)} title="Tune your floor" description="Choose what feels right. You can change these anytime."><div className="space-y-6"><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Branch</p><div className="grid grid-cols-2 gap-2 sm:grid-cols-3"><TogglePill active={filterBranch === "All"} onClick={() => setFilterBranch("All")}>All branches</TogglePill>{BRANCHES.map((branch) => <TogglePill key={branch} active={filterBranch === branch} onClick={() => setFilterBranch(branch)}>{branch}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Year</p><div className="grid grid-cols-5 gap-2"><TogglePill active={filterYear === "All"} onClick={() => setFilterYear("All")}>All</TogglePill>{[1, 2, 3, 4].map((year) => <TogglePill key={year} active={filterYear === year} onClick={() => setFilterYear(year)}>{year}{year === 1 ? "st" : year === 2 ? "nd" : year === 3 ? "rd" : "th"}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Style</p><div className="flex flex-wrap gap-2"><TogglePill active={filterStyle === "All"} onClick={() => setFilterStyle("All")}>All styles</TogglePill>{STYLE_OPTIONS.map((style) => <TogglePill key={style} active={filterStyle === style} onClick={() => setFilterStyle(style)}>{style}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Experience</p><div className="flex flex-wrap gap-2"><TogglePill active={filterExperience === "All"} onClick={() => setFilterExperience("All")}>Everyone</TogglePill>{EXPERIENCE_OPTIONS.map((experience) => <TogglePill key={experience} active={filterExperience === experience} onClick={() => setFilterExperience(experience)}>{experience}</TogglePill>)}</div></div><div><p className="mb-2 text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Navratri night</p><div className="grid grid-cols-5 gap-2 sm:grid-cols-9">{[1, 2, 3, 4, 5, 6, 7, 8, 9].map((night) => <TogglePill key={night} active={filterNight === night} onClick={() => setFilterNight(filterNight === night ? "All" : night)}>D{night}</TogglePill>)}</div></div><button type="button" onClick={() => setOnlyMyNights((current) => !current)} aria-pressed={onlyMyNights} className={cn("flex min-h-14 w-full items-center justify-between rounded-2xl border px-4 text-left text-xs font-bold", onlyMyNights ? "border-[#ffc83d]/50 bg-[#ffc83d]/10 text-[#ffe49a]" : "border-white/10 bg-white/[0.04] text-[#cbc9e8]")}><span><span className="block">Only people on my nights</span><span className="mt-1 block text-[10px] font-normal text-[#aaa8d0]">Show profiles with at least one shared Navratri night.</span></span><span className="text-lg">{onlyMyNights ? "✓" : "○"}</span></button><div className="flex items-center justify-between border-t border-white/10 pt-4"><span className="text-xs text-[#aaa8d0]">{filteredProfiles.length} profiles match</span><div className="flex gap-2"><Button variant="ghost" className="min-h-11 px-4 text-xs" onClick={resetFilters}>Reset</Button><Button className="min-h-11 px-5 text-xs" onClick={() => setFiltersOpen(false)}>Apply filters</Button></div></div></div></BottomSheet>

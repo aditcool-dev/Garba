@@ -1,5 +1,6 @@
 export type GenderLabel = "Woman" | "Man" | "Non-binary" | "Prefer not to say";
 export type LikeKind = "interested" | "garba_vibe";
+export type RelationshipStatus = "matched" | "sent" | "passed" | "incoming" | "new";
 export type ReportReason = "harassment" | "fake_profile" | "inappropriate_content" | "spam" | "other";
 
 export interface Profile {
@@ -44,6 +45,14 @@ export interface IncomingInterest {
   kind: LikeKind;
   created_at: string;
   sender_profile?: Profile;
+}
+
+export interface RelationshipRow {
+  profile: Profile;
+  status: RelationshipStatus;
+  like_kind?: LikeKind | null;
+  match_id?: string | null;
+  overlap_nights: number;
 }
 
 export interface Match {
@@ -92,7 +101,7 @@ export interface AuditLog {
   created_at: string;
 }
 
-export type NotificationType = "interest" | "match" | "message";
+export type NotificationType = "interest" | "match" | "message" | "unmatch";
 
 export interface NotificationItem {
   id: string;
@@ -107,4 +116,6 @@ export interface NotificationItem {
   created_at: string;
   read: boolean;
   unread_count?: number;
+  like_kind?: LikeKind | null;
+  overlap_nights?: number;
 }

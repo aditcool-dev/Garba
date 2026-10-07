@@ -3,7 +3,7 @@
 import { memo } from "react";
 import Image from "next/image";
 import { AvatarFallback, Badge, NightStrip, ScoreRing, VerifiedBadge } from "@/components/ui";
-import type { Profile } from "@/lib/supabase/types";
+import type { Profile, RelationshipStatus } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 import { optimizableImage, PROFILE_SIZES } from "@/lib/profile-images";
 
@@ -49,9 +49,11 @@ export type DiscoverProfileCardProps = {
   onInterested?: () => void;
   isMatched?: boolean;
   priority?: boolean;
+  status?: RelationshipStatus;
+  vibeSent?: boolean;
 };
 
-export const DiscoverProfileCard = memo(function DiscoverProfileCard({ person, score, myNights, className, onOpenDetails, onPass, onInterested, isMatched, priority }: DiscoverProfileCardProps) {
+export const DiscoverProfileCard = memo(function DiscoverProfileCard({ person, score, myNights, className, onOpenDetails, onPass, onInterested, isMatched, priority, status, vibeSent }: DiscoverProfileCardProps) {
   const overlap = person.available_nights.filter((night) => myNights.includes(night));
   const visibleStyles = person.styles.slice(0, 3);
   const extraStyles = Math.max(0, person.styles.length - visibleStyles.length);
@@ -69,6 +71,7 @@ export const DiscoverProfileCard = memo(function DiscoverProfileCard({ person, s
 
       <div className="absolute inset-x-0 top-0 flex items-start justify-between p-4 sm:p-5">
         {person.is_verified && <VerifiedBadge className="rounded-full border border-[#2de2c4]/25 bg-[#071c22] px-2.5 py-1 text-[10px]" />}
+        {status === "incoming" && <Badge className="border-[#f35ca8]/30 bg-[#f35ca8]/15 text-[10px] text-[#ffb5dc]">✦ Interested in you</Badge>}
         <div className="rounded-full border border-white/15 bg-[#0a0820] p-1" title="A fun app-generated score based on nights, styles, and interests.">
           <ScoreRing score={score} size="sm" label="Garba compatibility" />
         </div>
@@ -80,7 +83,9 @@ export const DiscoverProfileCard = memo(function DiscoverProfileCard({ person, s
             <h2 className="display-font truncate text-3xl font-bold tracking-[-0.06em] text-white sm:text-4xl">{person.first_name}, {person.age}</h2>
             <p className="mt-1 text-xs font-semibold text-white/75">{person.branch} · Year {person.year}</p>
           </div>
-          {isMatched && <Badge className="shrink-0 border-[#2de2c4]/30 bg-[#2de2c4]/15 text-[#73f4df]">Matched</Badge>}
+          {isMatched && <Badge className="shrink-0 border-[#2de2c4]/30 bg-[#2de2c4]/15 text-[#73f4df]">♥ Matched</Badge>}
+          {status === "sent" && <Badge className="shrink-0 border-[#ffc83d]/30 bg-[#ffc83d]/10 text-[#ffe49a]">{vibeSent ? "⭐ Vibe sent" : "♥ Interest sent"}</Badge>}
+          {status === "passed" && <Badge className="shrink-0 border-white/15 bg-white/10 text-[#aaa8d0]">× Passed</Badge>}
         </div>
 
         <p className="mt-3 line-clamp-2 max-w-[34rem] text-sm leading-5 text-white/82">{person.bio || "Ready to share a few rounds on the Garba floor."}</p>

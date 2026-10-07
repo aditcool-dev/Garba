@@ -89,8 +89,9 @@ You already applied 008 and 009. In SQL Editor run the two new repairs in order:
 
 1. **`supabase/migrations/010_health_samples.sql`**
 2. **`supabase/migrations/011_auth_admin_sample_contract.sql`**
+3. **`supabase/migrations/012_relationship_status_notifications.sql`**
 
-Both repairs are safe to run twice. Do not rerun the non-idempotent 001 initialization. The repairs remove legacy permissive app-table policies and create the checked policies needed by this release, including admin membership and report review. They do not remove real conversations. Migration 011 is required before `npm run seed:samples` on hosted Supabase.
+All three repairs are safe to run twice. Do not rerun the non-idempotent 001 initialization. The repairs remove legacy permissive app-table policies and create the checked policies needed by this release, including admin membership and report review. They do not remove real conversations. Migration 011 is required before `npm run seed:samples` on hosted Supabase; migration 012 is required before the updated Discover/notification client.
 
 Message visibility, unread counts and read receipts require the exact current chat-generation token as well as the timestamp cutoff. Legacy messages with no token are backfilled only when the match is still on its original epoch; unassignable legacy rows from already-reactivated conversations remain retained for admin evidence. A postdated old message cannot reappear in a fresh rematch.
 
@@ -165,7 +166,7 @@ All browser tests ran against **`next build` + `next start`**, not the dev serve
 | Check | Result |
 | --- | --- |
 | `tsc --noEmit`, lint, production build | Passed |
-| Application unit/regression suite | 26 tests in 7 files passed; all existing application tests retained; untracked copied `.kilo` worktree tests excluded |
+| Application unit/regression suite | 27 tests in 8 files passed; all existing application tests retained; untracked copied `.kilo` worktree tests excluded |
 | Error boundary | Structured message/stack/digest/route logged; friendly reference by default; actual message with `debug=1` |
 | Discover requests | Seed/cursor continuity, corrupt-final-row cursor recovery, RPC signatures, projections, realtime owners, missing-feed error/retry, invalid/null profile rows checked |
 | Auth | Signup/login accept college link requests and reject non-college requests before network calls; rejected password has no local fallback; SQL rejects non-college Auth inserts and untrusted sample signup metadata |
@@ -179,6 +180,7 @@ All browser tests ran against **`next build` + `next start`**, not the dev serve
 | Seeding/removal | Actual maintenance program run through emulated Admin API twice each; stable 30 IDs, ban reasserted on create and rerun, zero verified samples; real fixtures preserved |
 | Cleanup/Storage | Transaction run twice; scoped relationships removed; real user/files preserved; auth deletion deferred; API removes only queued files; final SQL deletes demo auth/profile |
 | Layout | Discover at 360/390/768/1280px has no document horizontal overflow; mobile action/nav clearance and native scrolling; hero at 320–1280px and 16/20px text has no clipping/overlap |
+| Status/notification transitions | Real disposable PostgreSQL covered new → sent → incoming notification → pass dismissal with retained incoming like → interest/rematch, status precedence and notification RPCs; browser UI covered the grid action contract and responsive/reduced-motion flows |
 | Security | All local public app tables have RLS enabled; sample/trust edits, unauthorized match/evidence writes denied; current source/browser bundles searched for service keys/admin passkeys; secret-key prebuild rejection exercised |
 
 The final 32-swipe 4×-CPU photographic **real-account test-fixture** run reported rounded 60 movement FPS and no card drag renders, with 29 estimated missed frames over the whole observation. The separate UI trace measured a 16.7ms 95th-percentile movement-frame interval across 128 samples. These test photographs are not part of the shipped sample dataset. No locked-60-FPS phone claim is made.
