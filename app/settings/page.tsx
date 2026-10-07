@@ -53,7 +53,7 @@ export default function Settings() {
         {savedMsg && <div role="status" className="mt-5 rounded-2xl border border-[#2dd4bf]/25 bg-[#2dd4bf]/10 px-4 py-3 text-xs font-semibold text-[#b7f3e9]">✓ {savedMsg}</div>}
 
         <div className="mt-5 grid gap-4">
-          <Link href="/discover?tutorial=1" className="rounded-2xl border border-white/15 bg-[#211952] p-4 text-sm font-bold text-[#ffd166]">? How it works — replay the Discover tutorial</Link>
+          <Link href="/discover?tutorial=1" className="rounded-2xl border border-white/15 bg-[#211952] p-4 text-sm font-bold text-[#ffd166]">ⓘ How it works <span className="mt-1 block text-xs font-normal text-[#cbc9e8]">Replay the Discover guide</span></Link>
           <Card className="p-0">
             <div className="border-b border-white/10 p-5 sm:p-6"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#f35ca8]">Discovery</p><h2 className="display-font mt-1 text-xl font-bold text-white">Set your boundaries</h2><p className="mt-1 text-xs leading-5 text-[#aaa8d0]">These choices only affect new discovery. Existing matches and chats remain.</p></div>
             <div className="divide-y divide-white/10">

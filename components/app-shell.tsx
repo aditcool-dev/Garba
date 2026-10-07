@@ -67,7 +67,7 @@ export function AppShell({
           </div>
         </header>
 
-        <main className="mx-auto max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">{children}</main>
+        <main className="app-page-content mx-auto min-w-0 max-w-6xl px-4 pt-6 sm:px-6 lg:px-8">{children}</main>
       </div>
 
       <footer className="mx-auto w-full max-w-6xl px-4 pb-[calc(1.5rem+env(safe-area-inset-bottom))] pt-12 text-center text-xs text-[#73789e] sm:px-6 md:pb-8 lg:px-8">
@@ -87,4 +87,3 @@ export function AppShell({
     </div>
   );
 }
-

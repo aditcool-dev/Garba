@@ -9,7 +9,7 @@ import { FESTIVAL_DAYS } from "@/config/festival";
 import { useAuth } from "@/lib/supabase/auth-context";
 import { db } from "@/lib/supabase/client";
 import { uploadAvatar } from "@/lib/supabase/storage";
-import type { Profile, ReportReason } from "@/lib/supabase/types";
+import type { Profile } from "@/lib/supabase/types";
 import { useRelationships } from "@/lib/relationships-context";
 import { MatchActions } from "@/components/match-actions";
 
@@ -28,10 +28,6 @@ export default function ProfilePage() {
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [reportModal, setReportModal] = useState(false);
-  const [reportReason, setReportReason] = useState<ReportReason>("other");
-  const [reportDesc, setReportDesc] = useState("");
-  const [reportSuccess, setReportSuccess] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editBio, setEditBio] = useState("");
   const [uploading, setUploading] = useState(false);
@@ -90,18 +86,6 @@ export default function ProfilePage() {
     }
   };
 
-  const handleReport = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!user || !profile) return;
-    await db.createReport({ reporter_id: user.id, reported_user_id: profile.id, reason: reportReason, description: reportDesc });
-    setReportSuccess(true);
-    setTimeout(() => {
-      setReportModal(false);
-      setReportSuccess(false);
-      setReportDesc("");
-    }, 2000);
-  };
-
   if (!user) {
     return (
       <AppShell title="Profile protected">
@@ -141,7 +125,6 @@ export default function ProfilePage() {
       <div className="mx-auto max-w-2xl pb-6">
         <div className="mb-4 flex items-center justify-between gap-3">
           <Link href="/discover" className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3.5 py-2 text-xs font-bold text-[#cbc9e8] transition hover:bg-white/10"><span aria-hidden="true">←</span> Discover</Link>
-          {!isOwnProfile && <button type="button" onClick={() => setReportModal(true)} className="inline-flex min-h-10 items-center gap-2 rounded-full border border-white/10 px-3.5 py-2 text-xs font-bold text-[#aaa8d0] transition hover:border-red-400/30 hover:bg-red-400/10 hover:text-red-200">⚑ Report</button>}
         </div>
 
         {actionSuccess && <div role="status" className="mb-4 rounded-2xl border border-[#2dd4bf]/25 bg-[#2dd4bf]/10 px-4 py-3 text-xs font-semibold text-[#b7f3e9]">{actionSuccess}</div>}
@@ -167,12 +150,11 @@ export default function ProfilePage() {
 
             <div className="grid gap-5 sm:grid-cols-2"><div><h2 className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Garba styles</h2><div className="mt-2 flex flex-wrap gap-1.5">{(currentProfile?.styles || []).map((style) => <Badge key={style} className="bg-[#f35ca8]/10 text-[#ffb5dc]">{style}</Badge>)}</div></div><div><h2 className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Interests</h2><div className="mt-2 flex flex-wrap gap-1.5">{(currentProfile?.interests || []).map((interest) => <Badge key={interest} className="bg-white/[0.04] text-[#aaa8d0]">#{interest}</Badge>)}</div></div></div>
 
-            <div className="flex flex-col gap-2 border-t border-white/10 pt-5 sm:flex-row">{!isOwnProfile ? <>{activeMatch?<><Link href={`/chat/${activeMatch.id}`} className="flex-1"><Button className="w-full">Matched · Open chat</Button></Link><MatchActions match={activeMatch} name={profileName} profileId={targetId} visible /></>:<><Button onClick={handleSendLike} className="flex-1">♥ Send Garba interest</Button><MatchActions name={profileName} profileId={targetId} /></>}</> : <Link href="/settings" className="flex-1"><Button variant="secondary" className="w-full">Account & privacy settings</Button></Link>}</div>
+            <div className="flex min-w-0 items-center gap-2 border-t border-white/10 pt-5">{!isOwnProfile ? <>{activeMatch?<><Link href={`/chat/${activeMatch.id}`} className="min-w-0 flex-1"><Button className="w-full px-3 text-xs">Open chat</Button></Link><MatchActions match={activeMatch} name={profileName} profileId={targetId} /></>:<><Button onClick={handleSendLike} className="min-w-0 flex-1 px-3 text-xs">♥ Interested</Button><MatchActions name={profileName} profileId={targetId} /></>}</> : <Link href="/settings" className="min-w-0 flex-1"><Button variant="secondary" className="w-full px-3 text-xs">Account & privacy settings</Button></Link>}</div>
             {!isOwnProfile && <p className="text-center text-[10px] text-[#73789e]">Only send interest if you&apos;d be comfortable meeting in the public festival space.</p>}
           </div>
         </Card>
 
-        {reportModal && <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm"><Card className="w-full max-w-md border-red-500/30 p-6"><h2 className="text-xl font-bold text-red-200">⚑ Report profile</h2><p className="mt-2 text-xs leading-5 text-[#aaa8d0]">Reports are reviewed confidentially by BMSCE administrators. Thank you for keeping the campus safe.</p>{reportSuccess ? <div className="my-6 rounded-xl bg-[#2dd4bf]/10 p-4 text-center text-sm text-[#9ef2e3]">✓ Report filed successfully.</div> : <form onSubmit={handleReport} className="mt-5 space-y-4"><div><label className="mb-1 block text-xs font-semibold text-[#cbc9e8]">Reason</label><select value={reportReason} onChange={(e) => setReportReason(e.target.value as ReportReason)} className="w-full rounded-xl border border-white/10 bg-[#191342] p-3 text-sm text-white outline-none"><option value="harassment">Harassment or rude behaviour</option><option value="fake_profile">Fake profile or impersonation</option><option value="inappropriate_content">Inappropriate photos or bio</option><option value="spam">Commercial spam / ticket resale</option><option value="other">Other reason</option></select></div><div><label className="mb-1 block text-xs font-semibold text-[#cbc9e8]">Details (optional)</label><textarea value={reportDesc} onChange={(e) => setReportDesc(e.target.value)} maxLength={1000} rows={3} placeholder="Explain what happened…" className="w-full rounded-xl border border-white/10 bg-[#191342] p-3 text-sm text-white outline-none" /></div><div className="flex justify-end gap-2"><Button type="button" variant="ghost" onClick={() => setReportModal(false)} className="min-h-10 px-4 text-xs">Cancel</Button><Button type="submit" className="min-h-10 bg-red-600 px-4 text-xs hover:bg-red-500">Submit report</Button></div></form>}</Card></div>}
       </div>
     </AppShell>
   );

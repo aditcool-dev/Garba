@@ -98,6 +98,18 @@ button:disabled {
   min-height: 48px;
 }
 
+.app-page-content { padding-bottom: calc(6rem + env(safe-area-inset-bottom)); }
+.app-page-content :where(h1,h2,h3,p) { overflow-wrap: anywhere; }
+@media (min-width: 768px) { .app-page-content { padding-bottom: 2rem; } }
+.person-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+@media (min-width: 640px) { .person-grid { grid-template-columns: repeat(3,minmax(0,1fr)); } }
+@media (min-width: 1024px) { .person-grid { grid-template-columns: repeat(4,minmax(0,1fr)); } }
+.person-tile-name { overflow-wrap: anywhere; }
+.tile-primary { display: inline-flex; min-width: 0; min-height: 44px; flex: 1; align-items: center; justify-content: center; border-radius: 999px; padding: 8px 4px; font-size: 12px; font-weight: 700; color: white; }
+.person-menu-trigger { display: inline-flex; width: 44px; height: 44px; flex-shrink: 0; align-items: center; justify-content: center; border: 1px solid rgba(255,255,255,.15); border-radius: 50%; color: #cbc9e8; }
+.person-menu-row { display: flex; min-height: 48px; width: 100%; align-items: center; gap: 12px; border-radius: 12px; padding: 12px; text-align: left; font-size: 14px; }
+.person-menu-row:hover { background: rgba(255,255,255,.06); }
+
 .display-font {
   font-family: var(--font-display);
   letter-spacing: -0.035em;
@@ -140,7 +152,7 @@ button:disabled {
   box-shadow: inset 0 1px 0 rgba(255,255,255,.25), 0 22px 70px rgba(0,0,0,.4), 0 0 42px rgba(243,92,168,.1);
   backdrop-filter: blur(24px) saturate(180%);
 }
-.glass-panel::after { position:absolute; right:-18%; top:-30%; width:55%; height:70%; border-radius:999px; background:rgba(255,139,77,.14); filter:blur(26px); content:""; pointer-events:none; }
+.glass-panel::after { position:absolute; inset:0; background:radial-gradient(circle at 100% 0%,rgba(255,139,77,.14),transparent 45%); content:""; pointer-events:none; }
 @supports not (backdrop-filter: blur(1px)) { .glass-panel { background:rgba(30,24,80,.92); } }
 @media (prefers-reduced-transparency: reduce) { .glass-panel { background:rgba(30,24,80,.92); backdrop-filter:none; } }
 @media (max-width: 480px) and (max-resolution: 1.5dppx) { .glass-panel { backdrop-filter:blur(12px) saturate(140%); } }
@@ -243,13 +255,11 @@ html[data-dragging="true"] *, html[data-tutorial="true"] * { animation-play-stat
 html[data-discover="true"] *, html[data-discover="true"] *::before, html[data-discover="true"] *::after { animation: none !important; }
 /* Fixed navigation also samples moving pixels underneath it on a mobile GPU. */
 html[data-discover="true"] .garba-app-shell nav,
-html[data-discover="true"] .discover-floor .garba-card,
-html[data-discover="true"] .shell-notifications * { backdrop-filter: none !important; }
+html[data-discover="true"] .discover-floor .garba-card { backdrop-filter: none !important; }
 .tutorial-profile h2 { font-size: 1.5rem; }
 .tutorial-profile p { font-size: .7rem; line-height: 1rem; }
 .tutorial-profile .display-font[aria-hidden="true"] { font-size: 3rem; top: 8%; }
 .swipe-edge { border: 3px solid; will-change: opacity; }
-.discover-actions { bottom: calc(5rem + env(safe-area-inset-bottom)); }
 .vibe-pulse { animation: vibe-pulse 2.8s ease-in-out infinite; }
 @keyframes vibe-pulse { 50% { transform: scale(1.045); } }
 

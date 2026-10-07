@@ -113,10 +113,10 @@ export default function ChatPage() {
     <AppShell title={`Chat · ${partnerName}`}>
       <div className="mx-auto flex max-w-2xl flex-col pb-6">
         <div className="mb-4 flex items-center justify-between gap-3 border-b border-white/10 pb-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <Link href="/chat" aria-label="Back to chats" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-lg text-[#cbc9e8] transition hover:bg-white/10">←</Link>
-            <div className="relative"><AvatarFallback src={partner.photo_path} name={partnerName} fallback={partner.photo_path || "🌸"} size="md" /><span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-[#18113f] bg-[#2dd4bf]" title="Available" /></div>
-            <div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><h1 className="truncate text-base font-bold text-white sm:text-lg">{partnerName}</h1>{partner.is_verified && <VerifiedBadge className="text-[10px]" />}</div><p className="mt-0.5 truncate text-[11px] text-[#aaa8d0]">{partner.branch || "BMSCE"} · matched for Navratri</p></div>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <Link href="/chat" aria-label="Back to chats" className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-lg text-[#cbc9e8] transition hover:bg-white/10">←</Link>
+            <AvatarFallback src={partner.photo_path} name={partnerName} fallback={partner.photo_path || "🌸"} size="md" className="hidden sm:inline-flex" />
+            <div className="min-w-0 flex-1"><h1 className="text-sm font-bold leading-5 text-white [overflow-wrap:anywhere] sm:text-lg">{partnerName}</h1><p className="mt-1 text-[10px] text-[#aaa8d0]">{partner.branch || "BMSCE"} · Matched {partner.is_verified ? "· ✓ Verified" : ""}</p></div>
           </div>
           <Link href={`/profile/${partner.id}`} className="hidden min-h-10 shrink-0 items-center rounded-full border border-white/10 px-3 py-2 text-[11px] font-bold text-[#ffd166] transition hover:bg-white/5 sm:inline-flex">View profile</Link>
           <MatchActions match={activeMatch} name={partnerName} profileId={partner.id} />
@@ -138,7 +138,7 @@ export default function ChatPage() {
                 return (
                   <div key={message.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
                     <div className={`max-w-[84%] rounded-[22px] px-4 py-3 shadow-lg sm:max-w-[72%] ${isMe ? "rounded-br-md bg-gradient-to-br from-[#e8459b] to-[#ff7a45] text-white" : "rounded-bl-md border border-white/10 bg-[#211952] text-[#f8f7ff]"}`}>
-                      <p className="text-sm leading-6">{message.body}</p>
+                      <p className="text-sm leading-6 [overflow-wrap:anywhere]">{message.body}</p>
                       <div className={`mt-1.5 flex items-center justify-end gap-1.5 text-[10px] ${isMe ? "text-white/75" : "text-[#aaa8d0]"}`}><span>{time}</span>{isMe && <span aria-label="Sent">✓✓</span>}</div>
                     </div>
                   </div>
@@ -149,12 +149,12 @@ export default function ChatPage() {
           <div ref={messagesEndRef} />
         </div>
 
-        <div className="custom-scrollbar my-3 flex gap-2 overflow-x-auto pb-1" aria-label="Conversation starters">
-          {CONVERSATION_STARTERS.map((starter) => <button key={starter} type="button" onClick={() => setText(starter)} className="min-h-10 shrink-0 rounded-full border border-white/10 bg-white/[0.045] px-3.5 py-2 text-xs font-semibold text-[#cbc9e8] transition hover:border-[#ffd166]/50 hover:bg-[#ffd166]/10 hover:text-[#ffdca0]">{starter}</button>)}
+        <div className="my-3 flex flex-wrap gap-2" aria-label="Conversation starters">
+          {CONVERSATION_STARTERS.map((starter) => <button key={starter} type="button" onClick={() => setText(starter)} className="min-h-11 max-w-full rounded-2xl border border-white/10 bg-white/[0.045] px-3 py-2 text-left text-xs font-semibold text-[#cbc9e8] transition hover:border-[#ffd166]/50 hover:bg-[#ffd166]/10 hover:text-[#ffdca0]">{starter}</button>)}
         </div>
 
         <form onSubmit={handleSend} className="flex items-end gap-2 rounded-[24px] border border-white/10 bg-white/[0.045] p-2 pl-4 shadow-xl">
-          <input aria-label="Message" value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} className="min-h-11 min-w-0 flex-1 bg-transparent py-2 text-sm text-white outline-none placeholder:text-[#73789e]" placeholder={`Message ${partnerName}…`} />
+          <input aria-label="Message" value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} className="min-h-11 min-w-0 flex-1 bg-transparent py-2 text-sm text-white outline-none placeholder:text-[#73789e]" placeholder="Write a message…" />
           <Button type="submit" disabled={!text.trim() || sending} className="min-h-11 min-w-11 px-4" aria-label="Send message">{sending ? "…" : <><span className="hidden sm:inline">Send</span><span className="sm:hidden" aria-hidden="true">↑</span></>}</Button>
         </form>
         <p className="mt-2 text-center text-[10px] text-[#73789e]">Keep it kind and keep meetup plans public. <Link href={`/profile/${partner.id}`} className="text-[#aaa8d0] underline decoration-white/20 underline-offset-2">Report a concern</Link></p>

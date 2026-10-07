@@ -2,7 +2,8 @@
 
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { motion, useAnimationControls, useMotionValue, useReducedMotion } from "framer-motion";
+import { motion, useMotionValue, useReducedMotion } from "framer-motion";
+import { Info, SlidersHorizontal } from "lucide-react";
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { BottomSheet } from "@/components/bottom-sheet";
@@ -21,7 +22,7 @@ import { ensureProfileDecoded, preloadProfileImage } from "@/lib/profile-images"
 import { FpsMeter } from "@/components/fps-meter";
 import type { TutorialCloseReason } from "@/components/discover-tutorial";
 import { AvatarFallback, Badge, Button, Card, NightStrip, ScoreRing, VerifiedBadge } from "@/components/ui";
-import { RelationshipGrid } from "@/components/relationship-grid";
+import { RelationshipActions, RelationshipGrid } from "@/components/relationship-grid";
 import { BRANCHES } from "@/config/branches";
 import { compatibilityScore } from "@/lib/scoring";
 import { useAuth } from "@/lib/supabase/auth-context";
@@ -43,8 +44,8 @@ function vibrate(pattern: number | number[] = 10) {
 
 function TogglePill({ active, children, onClick }: { active: boolean; children: React.ReactNode; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} aria-pressed={active} className={cn("min-h-12 rounded-2xl border px-4 text-left text-xs font-bold transition active:scale-[.98]", active ? "border-[#ffc83d]/60 bg-[#ffc83d]/15 text-[#ffe49a]" : "border-white/10 bg-white/[0.04] text-[#aaa8d0] hover:border-white/25 hover:text-white")}>
-      {active && <span className="mr-1.5 text-[#ffc83d]">✓</span>}{children}
+    <button type="button" onClick={onClick} aria-pressed={active} className={cn("min-h-12 min-w-0 rounded-2xl border px-2 text-left text-xs font-bold transition active:scale-[.98]", active ? "border-[#ffc83d]/60 bg-[#ffc83d]/15 text-[#ffe49a]" : "border-white/10 bg-white/[0.04] text-[#aaa8d0] hover:border-white/25 hover:text-white")}>
+      {children}
     </button>
   );
 }
@@ -102,8 +103,8 @@ export default function Discover() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [catalog,setCatalog]=useState<Profile[]>([]);
   const [relationshipRows, setRelationshipRows] = useState<RelationshipRow[]>([]);
+  const [statusesLoaded, setStatusesLoaded] = useState(false);
   const [guestNames, setGuestNames] = useState<string[]>([]);
-  const [index, setIndex] = useState(0);
   const [matchPopup, setMatchPopup] = useState<{ person: Profile; matchId: string } | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [detailRow, setDetailRow] = useState<RelationshipRow | null>(null);
@@ -131,8 +132,6 @@ export default function Discover() {
   const tutorialOwner=useRef(user?.id);
   const [consumed, setConsumed] = useState<Set<string>>(new Set());
   const [feedError, setFeedError] = useState<string | null>(null);
-  const [reshuffle, setReshuffle] = useState(0);
-  const stackAnimation=useAnimationControls();
   const dataRequest = useRef(0);
   const snapshotSession=useRef("");
   const previousMatches = useRef<Match[]>([]);
@@ -147,7 +146,6 @@ export default function Discover() {
   const swipeProgress = useMotionValue(0);
   useEffect(()=>{if(tutorialOwner.current!==user?.id){if(tutorialOwner.current){tutorialShown.current=false;setTutorialOpen(false);setHowItWorksOpen(false);setConsumed(new Set());}tutorialOwner.current=user?.id;}},[user?.id]);
   useEffect(()=>{document.documentElement.dataset.discover="true";const url=new URL(location.href);if(url.searchParams.get("tutorial")==="1"){setHowItWorksOpen(true);tutorialShown.current=true;url.searchParams.delete("tutorial");history.replaceState(history.state,"",url);}return()=>{delete document.documentElement.dataset.discover;};},[]);
-  useEffect(()=>{if(reshuffle>0)void stackAnimation.start(prefersReducedMotion?{opacity:[.8,1]}:{rotate:[0,-2,2,0],scale:[1,.97,1],transition:{duration:.24}});},[reshuffle,stackAnimation,prefersReducedMotion]);
 
   const matchByPartnerId = useMemo(() => {
     const map = new Map<string, string>();
@@ -166,7 +164,6 @@ export default function Discover() {
        const safeNames = publicNames.map((entry) => entry.first_name);
       setGuestNames(safeNames);
       setProfiles([]);
-      setIndex(0);
       return;
     }
 
@@ -196,6 +193,7 @@ export default function Discover() {
     setIncomingCount(incoming.length);
     setCatalog(allProfiles);
     setRelationshipRows(relationships);
+    setStatusesLoaded(true);
     setIncomingSenderIds(new Set(incoming.map((item) => item.from_user)));
     setLikedUserIds(outgoingLikes);
     setPassedUserIds(outgoingPasses);
@@ -227,7 +225,6 @@ export default function Discover() {
   },[userMatches,user?.id]);
 
   useEffect(() => {
-    setIndex(0);
     setRestoredCards([]);
     setReturningId(null);
   }, [filterBranch, filterYear, filterNight, filterStyle, filterExperience, onlyMyNights, filterStatus, searchTerm]);
@@ -425,13 +422,11 @@ export default function Discover() {
     finally { undoBusy.current = false;if(mutationChains.current.get(targetId)===undoOperation)mutationChains.current.delete(targetId);window.dispatchEvent(new Event("garbamate:swipe-settled")); }
   };
 
-  const shuffleFeed = () => {
-    if(topCard.current?.isBusy())return;
+  const refreshFloor = () => {
+    resetFilters();
     setFeedSeed(newFeedSeed());
-    setConsumed(new Set());setReshuffle((value)=>value+1);
-    setIndex(0);
+    setConsumed(new Set());
     setRestoredCards([]);
-    showToast("Shuffled your floor ✨");
   };
 
   const replayTutorial=()=>{if(!matchPopup&&!topCard.current?.isBusy()&&!mutationChains.current.size){tutorialShown.current=true;setHowItWorksOpen(true);}};
@@ -466,7 +461,7 @@ export default function Discover() {
   }, [user, person, triggerSwipe, detailsOpen, filtersOpen, matchPopup,tutorialOpen,howItWorksOpen]);
 
   const resetFilters = () => {
-    setSearchTerm(""); setFilterBranch("All"); setFilterYear("All"); setFilterNight("All"); setFilterStyle("All"); setFilterExperience("All"); setOnlyMyNights(false); setFilterStatus("Explore"); setIndex(0);
+    setSearchTerm(""); setFilterBranch("All"); setFilterYear("All"); setFilterNight("All"); setFilterStyle("All"); setFilterExperience("All"); setOnlyMyNights(false); setFilterStatus("Explore");
   };
 
   const renderMatchModal = matchPopup ? (
@@ -493,44 +488,44 @@ export default function Discover() {
 
   return (
     <AppShell title="Discover">
-      <div className="discover-floor relative mx-auto max-w-6xl pb-36 lg:pb-12" inert={tutorialOpen || howItWorksOpen}>
+      <div className="discover-floor relative mx-auto max-w-6xl" inert={tutorialOpen || howItWorksOpen}>
         <FpsMeter />
         {feedError&&<div role="alert" className="mb-3 rounded-xl bg-[#211952] p-4 text-sm">{feedError}<button type="button" className="ml-3 underline" onClick={()=>void loadData()}>Retry</button></div>}
          <DiscoverFeedback ref={feedback} />
          <PassUndoToast record={undoPass} onUndo={()=>void handleUndo()} />
          {gridUndo && <div role="status" className="fixed left-1/2 top-36 z-50 flex -translate-x-1/2 items-center gap-3 rounded-full border border-white/15 bg-[#211952] px-4 py-2 text-xs text-white shadow-xl">Moved to Passed · <button type="button" onClick={() => void undoGridPass()} className="font-bold text-[#73f4df]">Undo</button></div>}
 
-        <div className="mb-5 flex flex-wrap items-end justify-between gap-3 lg:mb-6">
-          <div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#ffc83d]">Your private floor</p><h1 className="display-font mt-1 text-3xl font-bold tracking-[-0.06em] text-white sm:text-4xl">Find your rhythm.</h1><p className="mt-1.5 text-xs text-[#aaa8d0]">One card, one vibe, one night at a time.</p></div>
-           <div className="flex items-center gap-2">
-             <span className="hidden rounded-full border border-[#2de2c4]/25 bg-[#2de2c4]/10 px-2.5 py-1.5 text-[10px] font-bold text-[#73f4df] sm:inline-flex">{orderedProfiles.length} on the floor</span>
-              <button type="button" onClick={replayTutorial} aria-label="A 1-minute tour of swiping, matches and chat" title="A 1-minute tour of swiping, matches and chat" className="touch-target inline-flex items-center justify-center rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]">ⓘ <span className="ml-1 hidden sm:inline">How it works</span><span className="ml-1 sm:hidden">Guide</span></button>
-             <button type="button" onClick={shuffleFeed} aria-label="Shuffle feed" className="touch-target inline-flex items-center gap-1 rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]">⤨ <span className="hidden sm:inline">Shuffle</span></button>
-             <button type="button" onClick={()=>setFiltersOpen(true)} className="touch-target inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]"><span aria-hidden="true">☷</span> Filters</button>
-           </div>
+        <div className="mb-4 flex min-w-0 items-center justify-between gap-2" data-discover-header>
+          <h1 className="display-font min-w-0 text-2xl font-bold tracking-[-0.04em] text-white sm:text-3xl">Discover</h1>
+          <div className="flex shrink-0 items-center gap-2">
+            <button type="button" onClick={replayTutorial} aria-label="How it works" title="A 1-minute tour of swiping, matches and chat" className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]"><Info size={15} aria-hidden="true" /><span className="hidden sm:inline">How it works</span><span className="sm:hidden">Guide</span></button>
+            <button type="button" onClick={()=>setFiltersOpen(true)} className="inline-flex min-h-11 items-center gap-1.5 rounded-full border border-white/10 bg-white/[0.05] px-3 text-xs font-bold text-[#cbc9e8]"><SlidersHorizontal size={15} aria-hidden="true" />Filters</button>
+          </div>
         </div>
 
-        {incomingCount > 0 && <Link href="/matches?tab=interests" className="mb-5 flex items-center justify-between gap-3 rounded-2xl border border-[#ffc83d]/30 bg-[#ffc83d]/[0.08] px-4 py-3 transition hover:bg-[#ffc83d]/[0.13]"><div className="flex items-center gap-3"><span className="text-xl">✦</span><div><p className="text-xs font-bold text-white">{incomingCount} student{incomingCount === 1 ? "" : "s"} showed interest</p><p className="mt-0.5 text-[10px] text-[#ffe49a]">Review your requests</p></div></div><span className="text-xs font-bold text-[#ffc83d]">Open →</span></Link>}
+        {incomingCount > 0 && <Link href="/matches?tab=interests" className="mb-3 flex min-h-11 min-w-0 items-center justify-between gap-2 rounded-2xl border border-[#ffc83d]/25 bg-[#ffc83d]/[0.06] px-3 text-[11px] font-bold text-[#ffe49a]"><span className="min-w-0">✦ {incomingCount} interested in you</span><span className="shrink-0">Review →</span></Link>}
 
-        <div className="mb-4 flex gap-2 overflow-x-auto pb-1 custom-scrollbar">
-          <div className="relative min-w-[190px] flex-1"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#73789e]">⌕</span><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by name, branch, or style" aria-label="Search by name, branch, or style" className="h-11 w-full rounded-2xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-xs text-white outline-none placeholder:text-[#73789e] focus:border-[#ffc83d]/60" /></div>
-           {[{ label: "Explore", value: "Explore" as StatusFilter, count: relationshipRows.filter((row) => row.status === "new" || row.status === "incoming").length }, { label: "Sent", value: "sent" as StatusFilter, count: statusCounts.sent }, { label: "Matches", value: "matches" as StatusFilter, count: statusCounts.matches }, { label: "Passed", value: "passed" as StatusFilter, count: statusCounts.passed }].map((tab) => <button key={tab.value} type="button" onClick={() => setFilterStatus(tab.value)} aria-pressed={filterStatus === tab.value} className={cn("inline-flex min-h-11 shrink-0 items-center gap-1.5 rounded-2xl border px-3 text-xs font-bold transition", filterStatus === tab.value ? "border-[#ffc83d]/55 bg-[#ffc83d]/15 text-[#ffe49a]" : "border-white/10 bg-white/[0.035] text-[#aaa8d0] hover:text-white")}>{tab.label}<span className="rounded-full bg-black/15 px-1.5 py-0.5 text-[10px]">{tab.count}</span></button>)}
-         </div>
-         <p className="-mt-2 mb-5 text-xs text-[#aaa8d0]">{searchTerm ? "Search results across everyone on your floor." : filterStatus === "sent" ? "People you showed interest in. Waiting for them to say yes." : filterStatus === "passed" ? "People you skipped. Changed your mind? Tap Interested." : filterStatus === "matches" ? "You both picked each other. Say hello!" : "Meet new people and anyone who is already interested in you."}</p>
+        <div className="sticky top-0 z-20 mb-4 space-y-3 bg-[#0d0929] py-2" data-discover-controls>
+          <div className="relative w-full min-w-0"><span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sm text-[#aaa8d0]">⌕</span><input value={searchTerm} onChange={(event) => setSearchTerm(event.target.value)} placeholder="Search by name, branch or style" aria-label="Search by name, branch, or style" className="h-12 w-full min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] pl-9 pr-3 text-xs text-white outline-none placeholder:text-[#aaa8d0] focus:border-[#ffc83d]/60" /></div>
+          <div className="grid grid-cols-4 rounded-2xl border border-white/10 bg-white/[0.035] p-1" aria-label="Discover tabs">
+            {[{ label: "Explore", value: "Explore" as StatusFilter, count: relationshipRows.filter((row) => row.status === "new" || row.status === "incoming").length }, { label: "Sent", value: "sent" as StatusFilter, count: statusCounts.sent }, { label: "Matches", value: "matches" as StatusFilter, count: statusCounts.matches }, { label: "Passed", value: "passed" as StatusFilter, count: statusCounts.passed }].map((tab) => <button key={tab.value} type="button" onClick={() => setFilterStatus(tab.value)} aria-label={`${tab.label} ${tab.count}`} aria-pressed={filterStatus === tab.value} className={cn("relative flex min-h-12 min-w-0 flex-col items-center justify-center gap-0.5 rounded-xl px-1 text-[11px] font-bold", filterStatus === tab.value ? "text-[#ffe49a]" : "text-[#cbc9e8]")}>{filterStatus === tab.value && <motion.span layoutId="discover-tab-indicator" transition={prefersReducedMotion ? { duration: 0 } : { type: "spring", stiffness: 420, damping: 36 }} className="absolute inset-0 rounded-xl border border-[#ffc83d]/35 bg-[#ffc83d]/10" />}<span className="relative rounded-full bg-black/20 px-1.5 text-[9px]">{tab.count > 99 ? "99+" : tab.count}</span><span className="relative">{tab.label}</span></button>)}
+          </div>
+          <p className="text-[10px] leading-4 text-[#aaa8d0]">{searchTerm ? "Search everyone on your floor." : filterStatus === "sent" ? "Interest sent. Waiting for them to say yes." : filterStatus === "passed" ? "Changed your mind? Tap Interested." : filterStatus === "matches" ? "You both picked each other. Say hello!" : "New people, shared nights, fresh possibilities."}</p>
+        </div>
 
-        <div className="grid items-start gap-8 lg:grid-cols-[190px_minmax(360px,460px)_minmax(230px,1fr)] xl:grid-cols-[210px_minmax(380px,460px)_280px]">
-           <aside className="hidden lg:block"><div className="sticky top-6 space-y-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#aaa8d0]">Tune your floor</p><h2 className="display-font mt-1 text-lg font-bold text-white">Your filters</h2></div><div className="space-y-2"><button type="button" onClick={() => setFiltersOpen(true)} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-[#ffc83d]/35 bg-[#ffc83d]/10 px-3 text-left text-xs font-bold text-[#ffe49a]">Open filter sheet <span>→</span></button><button type="button" onClick={() => { setFilterStatus("Explore"); setIndex(0); }} className="flex min-h-12 w-full items-center justify-between rounded-2xl border border-white/10 bg-white/[0.035] px-3 text-left text-xs font-bold text-[#cbc9e8]">Explore new people <span>{profiles.length}</span></button><button type="button" onClick={() => setOnlyMyNights((current) => !current)} className={cn("flex min-h-12 w-full items-center justify-between rounded-2xl border px-3 text-left text-xs font-bold transition", onlyMyNights ? "border-[#ffc83d]/45 bg-[#ffc83d]/10 text-[#ffe49a]" : "border-white/10 bg-white/[0.035] text-[#cbc9e8]")}>Only my nights <span>{onlyMyNights ? "✓" : "○"}</span></button></div><div className="rounded-2xl border border-white/10 bg-white/[0.03] p-3 text-[11px] leading-5 text-[#aaa8d0]"><span className="text-[#ffc83d]">← → ↑</span> keyboard shortcuts<br />Swipe right to be interested<br />Swipe left to pass</div><button type="button" onClick={resetFilters} className="text-xs font-bold text-[#ffc83d] hover:underline">Reset all filters</button></div></aside>
+        <div className={cn("grid items-start gap-8", !showGrid && "lg:grid-cols-[160px_minmax(0,460px)_minmax(0,1fr)] xl:grid-cols-[190px_minmax(0,460px)_240px]")}>
+           {!showGrid && <aside className="hidden min-w-0 lg:block"><div className="space-y-4"><h2 className="text-lg font-bold text-white">Your filters</h2><button type="button" onClick={() => setFiltersOpen(true)} className="min-h-12 w-full rounded-2xl border border-[#ffc83d]/35 bg-[#ffc83d]/10 px-3 text-left text-xs font-bold text-[#ffe49a]">Open filter sheet →</button><button type="button" onClick={() => setOnlyMyNights((current) => !current)} aria-pressed={onlyMyNights} className="min-h-12 w-full rounded-2xl border border-white/10 px-3 text-left text-xs font-bold text-[#cbc9e8]">Only my nights {onlyMyNights ? "✓" : "○"}</button><p className="text-[11px] leading-5 text-[#aaa8d0]">← → ↑ keyboard shortcuts<br />Swipe right for Interested<br />Swipe left to Pass</p><button type="button" onClick={resetFilters} className="min-h-11 text-xs font-bold text-[#ffc83d]">Reset all filters</button></div></aside>}
 
            <section className="min-w-0" aria-label="Discover profile cards">
-             {showGrid ? <RelationshipGrid rows={gridRows} myProfile={myProfile} loading={!relationshipRows.length && !feedError} onDecision={(row, decision) => void handleGridDecision(row, decision)} onOpen={(row) => { setDetailRow(row); setDetailsOpen(true); }} /> : person ? <div className="relative mx-auto w-full max-w-[460px]">
-              <motion.div className="discover-stack relative" animate={stackAnimation}>
+             {showGrid ? <RelationshipGrid rows={gridRows} myProfile={myProfile} loading={!statusesLoaded && !feedError} onDecision={(row, decision) => void handleGridDecision(row, decision)} onOpen={(row) => { setDetailRow(row); setDetailsOpen(true); }} /> : person ? <div className="relative mx-auto w-full max-w-[460px]">
+              <div className="discover-stack relative">
                  {stack.slice(0, 3).map((profile, depth) => <SwipeCard key={profile.id} ref={depth === 0 ? topCard : undefined} depth={depth} progress={swipeProgress} disabled={tutorialOpen || howItWorksOpen || matchByPartnerId.has(profile.id)} returning={returningId === profile.id} person={profile} status={statusById.get(profile.id)?.status} vibeSent={statusById.get(profile.id)?.like_kind === "garba_vibe"} score={scoreFor(profile)} myNights={myNights} onOpenDetails={openDetails} onPass={triggerPass} onInterested={triggerLike} isMatched={matchByPartnerId.has(profile.id)} canDecide={checkDecision} onDecide={completeDecision} />)}
-              </motion.div>
-              {matchByPartnerId.has(person.id)&&<div className="mt-3 flex justify-center"><MatchActions match={userMatches.find((match)=>match.id===matchByPartnerId.get(person.id))} profileId={person.id} name={person.first_name} visible /></div>}
+              </div>
+              {matchByPartnerId.has(person.id)&&<div className="mt-3 flex justify-center"><MatchActions match={userMatches.find((match)=>match.id===matchByPartnerId.get(person.id))} profileId={person.id} name={person.first_name} /></div>}
               <p className="mt-3 text-center text-[10px] font-semibold text-[#73789e]">A fun score based on nights, styles, and interests — never a judgement.</p>
-            </div> : <Card className="mx-auto max-w-[460px] border-dashed border-white/15 py-20 text-center"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full border border-[#ffc83d]/30 bg-[#ffc83d]/10 text-3xl">✦</div><h2 className="display-font mt-5 text-2xl font-bold text-white">Looks like you&apos;ve explored everyone nearby 👀</h2><p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-[#aaa8d0]">Check back when more BMSCE students join.</p><Button className="mt-6" onClick={() => { resetFilters(); void loadData(); }}>Refresh the floor</Button></Card>}
+            </div> : <Card className="mx-auto max-w-[460px] border-dashed border-white/15 py-10 text-center" data-explore-empty><div className="text-4xl" aria-hidden="true">👀</div><h2 className="display-font mt-4 text-2xl font-bold text-white">You&apos;ve seen everyone for now 👀</h2><p className="mt-2 text-sm leading-6 text-[#aaa8d0]">Review your people or refresh the floor.</p><div className="mt-5 flex flex-col gap-3">{statusCounts.passed > 0 && <Button variant="secondary" onClick={() => setFilterStatus("passed")}>Review Passed ({statusCounts.passed})</Button>}{statusCounts.sent > 0 && <Button variant="secondary" onClick={() => setFilterStatus("sent")}>See Sent ({statusCounts.sent})</Button>}<Button onClick={refreshFloor}>Refresh</Button></div></Card>}
 
-             {!showGrid && person && !matchByPartnerId.has(person.id) && <div className="discover-actions fixed inset-x-0 z-30 flex items-center justify-center gap-3 px-4 md:static md:mt-5 md:px-0">
+             {!showGrid && person && !matchByPartnerId.has(person.id) && <div className="discover-actions relative mt-5 flex items-center justify-center gap-3 px-4 md:px-0">
               <motion.button type="button" whileTap={{ scale: .94 }} onClick={() => triggerSwipe("pass")} aria-label={`Pass on ${person.first_name}`} className="touch-target flex h-14 w-14 items-center justify-center rounded-full border border-white/12 bg-[#16123a] text-2xl text-[#aaa8d0] shadow-[0_10px_28px_rgba(0,0,0,.3)] hover:border-[#b46e82]/50">×</motion.button>
               <div className="vibe-pulse -translate-y-2"><motion.button type="button" whileTap={{ scale: .94 }} onClick={() => triggerSwipe("vibe")} aria-label={`Send Garba Vibe to ${person.first_name}`} className="touch-target flex h-[68px] w-[68px] items-center justify-center rounded-full border border-[#ffc83d]/45 bg-[linear-gradient(145deg,#ff2e93,#ff8a00_60%,#ffc83d)] text-2xl text-white shadow-[0_16px_40px_rgba(255,46,147,.28)]">⭐</motion.button></div>
               <motion.button type="button" whileTap={{ scale: .94 }} onClick={() => triggerSwipe("like")} aria-label={`Show interest in ${person.first_name}`} className="touch-target flex h-14 w-14 items-center justify-center rounded-full border border-[#2de2c4]/35 bg-[#123e4a] text-2xl text-[#73f4df] shadow-[0_10px_28px_rgba(0,0,0,.3)] hover:border-[#2de2c4]/60">♥</motion.button>
@@ -538,7 +533,7 @@ export default function Discover() {
              {!showGrid && person && <div className="mt-7 hidden justify-center gap-2 text-[10px] font-semibold text-[#73789e] md:flex"><span>Pass</span><span>•</span><span>⭐ {3 - vibeCount} Garba Vibes left today</span><span>•</span><span>Interested</span></div>}
           </section>
 
-          <aside className="hidden space-y-4 lg:block"><Card className="p-4"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#ffc83d]">Your nights</p><h2 className="display-font mt-1 text-xl font-bold text-white">Find the overlap</h2><p className="mt-1 text-[11px] leading-5 text-[#aaa8d0]">Gold dots show nights you both picked.</p><NightStrip nights={myNights} highlightedNights={myNights} className="mt-4" /></Card><Card className="p-4"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#f35ca8]">Your circle</p><div className="mt-3 flex items-center gap-3"><div className="flex -space-x-3">{userMatches.slice(0, 3).map((match) => <AvatarFallback key={match.id} src={match.partner?.photo_path} name={match.partner?.first_name || "Match"} size="sm" />)}</div><div><p className="text-sm font-bold text-white">{userMatches.length} matches</p><Link href="/matches" className="text-[10px] font-bold text-[#ffc83d]">Open circle →</Link></div></div></Card><div className="rounded-2xl border border-[#2de2c4]/20 bg-[#123e4a]/25 p-4 text-[11px] leading-5 text-[#b4d9d7]"><span className="font-bold text-[#73f4df]">Safe dancing, always.</span><br />Keep first meetups at the official event, with friends, in public.</div></aside>
+          {!showGrid && <aside className="hidden min-w-0 space-y-4 lg:block"><Card className="p-4"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#ffc83d]">Your nights</p><h2 className="display-font mt-1 text-xl font-bold text-white">Find the overlap</h2><p className="mt-1 text-[11px] leading-5 text-[#aaa8d0]">Gold dots show nights you both picked.</p><NightStrip nights={myNights} highlightedNights={myNights} className="mt-4" /></Card><Card className="p-4"><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#f35ca8]">Your circle</p><p className="mt-3 text-sm font-bold text-white">{userMatches.length} matches</p><Link href="/matches" className="text-xs font-bold text-[#ffc83d]">Open circle →</Link></Card></aside>}
         </div>
       </div>
 
@@ -546,7 +541,7 @@ export default function Discover() {
          <div className="space-y-5"><div className="relative h-56 overflow-hidden rounded-[24px]"><IllustratedProfileVisual person={panelPerson} /><div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-[#0a0820] p-4 pt-12"><h3 className="display-font text-2xl font-bold text-white">{panelPerson.first_name}, {panelPerson.age}</h3><p className="text-xs text-white/75">{panelPerson.branch} · Year {panelPerson.year}</p></div></div>
            <div className="flex items-center justify-between">{panelPerson.is_verified && <VerifiedBadge />}<ScoreRing score={scoreFor(panelPerson)} size="sm" label="Garba compatibility" /></div>
            <p className="text-sm leading-6 text-[#cbc9e8]">{panelPerson.bio || "Ready to share a few rounds on the floor."}</p><div className="flex flex-wrap gap-2">{panelPerson.styles.map((style) => <Badge key={style}>{style}</Badge>)}</div><NightStrip nights={panelPerson.available_nights} highlightedNights={panelPerson.available_nights.filter((night) => myNights.includes(night))} />
-           <div className="flex gap-2">{detailRow ? <><Button className="flex-1" onClick={() => void handleGridDecision(detailRow, "interested")}>Interested</Button><button type="button" className="min-h-11 rounded-full border border-[#ffc83d]/30 px-4 text-[#ffe49a]" onClick={() => void handleGridDecision(detailRow, "vibe")}>⭐</button></> : <Button className="flex-1" onClick={() => { setDetailsOpen(false); triggerSwipe("like"); }}>Interested</Button>}<Link href={`/profile/${panelPerson.id}`} className="flex-1"><Button variant="secondary" className="w-full">View profile</Button></Link></div>
+           <RelationshipActions row={detailRow || statusById.get(panelPerson.id) || { profile: panelPerson, status: "new", overlap_nights: panelPerson.available_nights.filter((night) => myNights.includes(night)).length }} onDecision={(row, decision) => { setDetailsOpen(false); if (detailRow) void handleGridDecision(row, decision); else triggerSwipe(decision === "interested" ? "like" : decision); }} />
          </div>
       </BottomSheet>}
 

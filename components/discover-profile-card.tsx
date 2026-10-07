@@ -80,7 +80,7 @@ export const DiscoverProfileCard = memo(function DiscoverProfileCard({ person, s
       <div className="absolute inset-x-0 bottom-0 p-5 sm:p-6">
         <div className="flex items-end justify-between gap-3">
           <div className="min-w-0">
-            <h2 className="display-font truncate text-3xl font-bold tracking-[-0.06em] text-white sm:text-4xl">{person.first_name}, {person.age}</h2>
+            <h2 className="display-font line-clamp-2 text-2xl font-bold tracking-[-0.04em] text-white [overflow-wrap:anywhere] sm:text-3xl">{person.first_name}, {person.age}</h2>
             <p className="mt-1 text-xs font-semibold text-white/75">{person.branch} · Year {person.year}</p>
           </div>
           {isMatched && <Badge className="shrink-0 border-[#2de2c4]/30 bg-[#2de2c4]/15 text-[#73f4df]">♥ Matched</Badge>}

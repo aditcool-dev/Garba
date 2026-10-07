@@ -53,7 +53,7 @@ export function ScoreRing({ score, label = "Garba match", size = "md", className
           style={{ transform: "rotate(-90deg)", transformOrigin: "50% 50%" }}
         />
       </svg>
-      <span className="display-font absolute inset-0 flex items-center justify-center text-sm font-bold text-white sm:text-base">
+      <span className={cn("display-font absolute inset-0 flex items-center justify-center font-bold text-white", dimension <= 40 ? "text-[10px]" : "text-sm sm:text-base")}>
         {value}%
       </span>
     </div>

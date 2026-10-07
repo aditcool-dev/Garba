@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 import { cn } from "@/lib/utils";
 
 export type BottomSheetProps = {
@@ -27,7 +28,9 @@ export function BottomSheet({ open, onClose, title, description, closeLabel = "C
 
     const previousOverflow = document.body.style.overflow;
     const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const handleKeyDown = (event: KeyboardEvent) => {
+     const handleKeyDown = (event: KeyboardEvent) => {
+       const dialogs = document.querySelectorAll('[data-bottom-sheet]');
+       if (dialogs[dialogs.length - 1] !== dialogRef.current) return;
       if (event.key === "Escape") {
         event.preventDefault();
         onCloseRef.current();
@@ -66,7 +69,7 @@ export function BottomSheet({ open, onClose, title, description, closeLabel = "C
 
   if (!open) return null;
 
-  return (
+  return createPortal(
     <div
       className="fixed inset-0 z-50 flex items-end justify-center bg-[#050311]/75 p-0 backdrop-blur-sm sm:p-4 md:items-center"
       role="presentation"
@@ -75,7 +78,8 @@ export function BottomSheet({ open, onClose, title, description, closeLabel = "C
       }}
     >
       <section
-        ref={dialogRef}
+         ref={dialogRef}
+         data-bottom-sheet
         className={cn(
           "custom-scrollbar max-h-[calc(100dvh-1rem)] w-full max-w-xl overflow-y-auto rounded-t-[32px] border border-white/10 bg-[#150f3a] p-5 pb-[calc(1.25rem+env(safe-area-inset-bottom))] shadow-[0_-20px_70px_rgba(0,0,0,0.38)] sm:rounded-[32px] sm:pb-5",
           className,
@@ -88,16 +92,16 @@ export function BottomSheet({ open, onClose, title, description, closeLabel = "C
       >
         <div className="mx-auto mb-4 h-1 w-10 rounded-full bg-white/20" aria-hidden="true" />
         <div className={cn("flex items-start justify-between gap-4",stickyHeader&&"sticky top-0 z-30 bg-[#150f3a] pb-3")}>
-          <div className="min-w-0">
+           <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">
             {title !== undefined && <h2 id={titleId} className="display-font text-xl font-bold text-white">{title}</h2>}
             {description !== undefined && <p id={descriptionId} className="mt-1 text-sm leading-6 text-[#aaa8d0]">{description}</p>}
           </div>
-          <button ref={closeButtonRef} type="button" className="touch-target -mr-2 -mt-2 rounded-full text-xl text-[#aaa8d0] transition hover:bg-white/10 hover:text-white" onClick={onClose} aria-label={closeLabel}>
+           <button ref={closeButtonRef} type="button" className="touch-target -mr-2 -mt-2 shrink-0 rounded-full text-xl text-[#aaa8d0] transition hover:bg-white/10 hover:text-white" onClick={onClose} aria-label={closeLabel}>
             ×
           </button>
         </div>
         <div className="mt-5">{children}</div>
       </section>
-    </div>
+    </div>, document.body
   );
 }

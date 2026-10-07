@@ -76,7 +76,7 @@ begin
     delete from notification_events where type='interest' and ((recipient_id=p_target and actor_id=actor) or (recipient_id=actor and actor_id=p_target));
   else
     if p_decision='vibe' then
-      if (select count(*) from likes where from_user=actor and kind='garba_vibe' and created_at>=date_trunc('day',clock_timestamp()))>=3 then raise exception 'daily Garba Vibe quota reached'; end if;
+      if (select count(*) from public.likes l where l.from_user=actor and l.kind='garba_vibe' and l.created_at>=date_trunc('day',clock_timestamp()))>=3 then raise exception 'daily Garba Vibe quota reached'; end if;
       kind:='garba_vibe';
     else kind:='interested'; end if;
     delete from passes where from_user=actor and to_user=p_target;

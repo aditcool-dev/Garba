@@ -1,5 +1,11 @@
 # GarbaMate health check and deployment
 
+## Current mobile-polish verification — 7 October 2026
+
+The final polished production build passes TypeScript, lint, 27 application tests, seven mobile-polish groups, seven adapted follow-up groups, 21 responsive/swipe UI checks and five auth groups. Disposable SQL checks pass for statuses/notifications/Vibe/quota, unmatch/epoch/RLS, health/sample/trust/unread/report and Auth Admin metadata ordering. The preexisting Vibe quota SELECT was ambiguous between a PL/pgSQL variable and a column; migration **013** repairs that clause for already-applied 012 and was applied twice successfully. The updated 012 also fixes fresh installations.
+
+All four requested viewport sets (360×740, 390×844, 768×1024, 1280×800) and menu actions pass. Exact artifacts, screen naming, commands and limits are in `TESTING.md`; design/layout deviations are in `DECISIONS.md`. This is production-mode Chromium with emulated Supabase transport and real local SQL, not a hosted-project or native mobile-browser signoff. The following sections retain the earlier health investigation and deployment history; current screenshots are `/tmp/omnirush/mobile-polish/`.
+
 ## Root cause
 
 The production-build reproduction failed with:
@@ -85,13 +91,14 @@ Then run **`supabase/cleanup-legacy-demo.sql` again**. This finalizes auth/profi
 
 ### 3. Apply the database repair
 
-You already applied 008 and 009. In SQL Editor run the two new repairs in order:
+For a project already on 008 and 009, run the remaining repairs in order in SQL Editor:
 
 1. **`supabase/migrations/010_health_samples.sql`**
 2. **`supabase/migrations/011_auth_admin_sample_contract.sql`**
 3. **`supabase/migrations/012_relationship_status_notifications.sql`**
+4. **`supabase/migrations/013_qualify_vibe_quota.sql`**
 
-All three repairs are safe to run twice. Do not rerun the non-idempotent 001 initialization. The repairs remove legacy permissive app-table policies and create the checked policies needed by this release, including admin membership and report review. They do not remove real conversations. Migration 011 is required before `npm run seed:samples` on hosted Supabase; migration 012 is required before the updated Discover/notification client.
+All four repairs are safe to run twice. Do not rerun the non-idempotent 001 initialization. The repairs remove legacy permissive app-table policies and create the checked policies needed by this release, including admin membership and report review. They do not remove real conversations. Migration 011 is required before `npm run seed:samples` on hosted Supabase; migration 012 is required before the updated Discover/notification client. If 010–012 are already applied, run **only 013** to repair the existing Vibe query ambiguity; the polish does not require reseeding or cleanup.
 
 Message visibility, unread counts and read receipts require the exact current chat-generation token as well as the timestamp cutoff. Legacy messages with no token are backfilled only when the match is still on its original epoch; unassignable legacy rows from already-reactivated conversations remain retained for admin evidence. A postdated old message cannot reappear in a fresh rematch.
 
@@ -171,7 +178,7 @@ All browser tests ran against **`next build` + `next start`**, not the dev serve
 | Discover requests | Seed/cursor continuity, corrupt-final-row cursor recovery, RPC signatures, projections, realtime owners, missing-feed error/retry, invalid/null profile rows checked |
 | Auth | Signup/login accept college link requests and reject non-college requests before network calls; rejected password has no local fallback; SQL rejects non-college Auth inserts and untrusted sample signup metadata |
 | Tutorial | Onboarding → Discover, once-only flag, replay, finish/Escape, four widths/focus trap/reduced motion, zero like/pass/match writes |
-| Feed | Ten differing refresh orders, Shuffle/two accounts, duplicate-free swipes/pages, stable surviving order, no visible old IDs/demo markers/countdown |
+| Feed | Ten differing refresh orders/two accounts, duplicate-free swipes/pages, stable surviving order, no visible old IDs/demo markers/countdown; Shuffle is removed in the polish |
 | Swipe/actions | 20 left passes + 20 right interests, button direction, rapid taps, Undo/outgoing-like restoration, upward Vibe and quota; main Discover keyboard checks included |
 | Real-account fixtures | One canonical mutual match; realtime message visible in the other account; unread count increments and clears when chat opens |
 | Unmatch | Matches/chat/profile/Discover actions, failed RPC rollback, delayed send rejected, both rediscover without Matched, fresh empty same-row rematch; old evidence admin-only, including an old message postdated to 2099 |
@@ -183,21 +190,22 @@ All browser tests ran against **`next build` + `next start`**, not the dev serve
 | Status/notification transitions | Real disposable PostgreSQL covered new → sent → incoming notification → pass dismissal with retained incoming like → interest/rematch, status precedence and notification RPCs; browser UI covered the grid action contract and responsive/reduced-motion flows |
 | Security | All local public app tables have RLS enabled; sample/trust edits, unauthorized match/evidence writes denied; current source/browser bundles searched for service keys/admin passkeys; secret-key prebuild rejection exercised |
 
-The final 32-swipe 4×-CPU photographic **real-account test-fixture** run reported rounded 60 movement FPS and no card drag renders, with 29 estimated missed frames over the whole observation. The separate UI trace measured a 16.7ms 95th-percentile movement-frame interval across 128 samples. These test photographs are not part of the shipped sample dataset. No locked-60-FPS phone claim is made.
+The final polish 32-swipe 4×-CPU photographic **real-account test-fixture** run reported 60 drag FPS, 58 overall FPS, no card drag renders and 50 estimated missed frames over the whole observation. The separate UI trace measured a 16.7ms 95th-percentile movement-frame interval across 133 samples. These test photographs are not part of the shipped sample dataset. No locked-60-FPS phone claim is made.
 
-All three browser drivers passed against the final build: seven follow-up groups, 21 UI/layout checks and five auth groups. An earlier UI run timed out while injecting an Undo fixture before the last authoritative refresh settled; the driver now waits for that refresh and the final rerun passed. Expected injected unmatch/missing-RPC/stale-send errors are successful negative-path checks.
+All four browser drivers passed against the final polish build: seven mobile-polish groups, seven follow-up groups, 21 UI/layout checks and five auth groups. The follow-up driver now uses overflow menus/confirmation, waits for the authoritative post-unmatch status refresh, and dismisses transient toasts before its programmatic missing-feed retry. An earlier UI run timed out while injecting an Undo fixture before the last authoritative refresh settled; the driver now waits for that refresh and the final rerun passed. Expected injected unmatch/missing-RPC/stale-send errors are successful negative-path checks.
 
 Artifacts: `/tmp/omnirush/followup-results.json`, `verification-results.json`, `auth-health-results.json`, `sample-seeding-results.json`, Chrome traces, tutorial/hero screenshots, and `health-discover-{360,390,768,1280}.png`. The expected injected unmatch failure, missing-RPC response and stale-send rejection appear in test logs.
 
 ### Reproduction commands for disposable tests
 
-Apply `tests/supabase-bootstrap.sql` and migrations 001–011 to fresh disposable databases, build with test-only public configuration, and start on port 3101. Do not run fixture-reset drivers against production. `verify-followups.cjs` requires a database name ending `_tests` and resets its Auth fixtures; run SQL integration suites in a separate disposable database.
+Apply `tests/supabase-bootstrap.sql` and migrations 001–013 to fresh disposable databases, build with test-only public configuration, and start on port 3101. Do not run fixture-reset drivers against production. `verify-followups.cjs` and the mobile-polish driver require a database name ending `_tests` and reset Auth fixtures; run SQL integration suites in a separate disposable database. Run those two reset drivers sequentially when they share a database.
 
 ```bash
 npx tsc --noEmit
 npm run lint
 npm test
 node scripts/verify-followups.cjs
+node scripts/verify-mobile-polish.cjs
 node scripts/verify-ui.cjs
 node scripts/verify-auth.cjs
 node scripts/verify-sample-seeding.cjs
