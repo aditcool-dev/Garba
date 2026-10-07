@@ -1,5 +1,24 @@
 # Testing report
 
+## Current tutorial layout repair
+
+- TypeScript, ESLint, production build and all **35 tests in 10 files** pass. The broader `verify-mobile-polish.cjs` suite passes all seven groups, including notifications/filters/action sheets and live Unmatch/Block, after the reusable sheet extension.
+- `scripts/verify-tutorial-layout.cjs` passes all nine steps at **360×800, 390×844, 412×915, 768×1024, 1280×800**, plus all nine at **360×640** with reduced motion. Five normal viewport groups include three actual practice states/actions, animated-motion sampling and expanded details. The sixth group verifies short-height scroll fallback, Finish and practice isolation. Header, body and footer bounds never overlap; the instruction is not sticky. Complete card/metadata/nights and visible practice/navigation controls fit at the five standard sizes. Navigation stays within the viewport even at the short stress size; no document/dialog/demo horizontal overflow is present.
+- Focus trapping, dropdown arrow behavior, Escape and final Start discovering are exercised. Fixture relationship counts and recorded API requests verify zero tutorial decision/message writes. Browser Auth/HTTP/Phoenix transport is emulated over disposable PostgreSQL. Native phone/browser-chrome/Safari/safe-area behavior is not verified.
+- Screenshots and results are at **`/tmp/omnirush/tutorial-layout/`** (`GARBA_TUTORIAL_ARTIFACTS` overrides it). For each standard viewport: `WIDTHxHEIGHT-step-1.png` through `step-9.png`, matching `-dialog.png` crops and an **`WIDTHxHEIGHT-all-steps.png`** contact sheet. Practice and details states have separate PNGs; 360×640 has all nine short-height images. All five contact sheets were visually reviewed. `results.json` records six passing groups.
+
+Use the same disposable database/production-build setup documented below, then run:
+
+```bash
+GARBA_TEST_URL=http://127.0.0.1:3101 \
+GARBA_CHROME_PATH=/path/to/chromium \
+GARBA_PSQL=/path/to/psql \
+GARBA_TEST_DATABASE=garba_tests \
+node scripts/verify-tutorial-layout.cjs
+```
+
+The driver resets its `_tests` database. Run it sequentially with other SQL-backed reset drivers sharing that database. Screenshot contacts use Sharp from the existing Next.js dependency tree. This tutorial repair needs a frontend deployment only; no database migration is required. Older sections record prior releases.
+
 ## Current search/receipt release
 
 - `tsc --noEmit`, lint, production build and **35 tests in 10 files pass**, retaining all existing tests. New ranking tests cover requested names, exact words, compatibility, stable alphabetic ties, mixed case/diacritics and branch/style/bio matches without identifier/email matches. Status tests cover all tick states, opt-out, retry, monotonic late-response merging and >=4.5:1 cyan/grey contrast on the outgoing gradient.
