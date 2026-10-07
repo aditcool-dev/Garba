@@ -9,6 +9,7 @@ type Stage =
   | "AUTH_CALLBACK_EXCHANGE_STARTED" | "AUTH_CALLBACK_EXCHANGE_FINISHED"
   | "AUTH_CALLBACK_HTTP_STARTED" | "AUTH_CALLBACK_HTTP_HEADERS" | "AUTH_CALLBACK_HTTP_FAILED"
   | "AUTH_CALLBACK_HTTP_JSON_STARTED" | "AUTH_CALLBACK_HTTP_JSON_FINISHED" | "AUTH_CALLBACK_HTTP_JSON_FAILED"
+  | "AUTH_CALLBACK_SET_COOKIE_HEADER"
   | "AUTH_CALLBACK_COOKIE_WRITE_STARTED" | "AUTH_CALLBACK_COOKIE_WRITE_FINISHED"
   | "AUTH_CALLBACK_GET_USER_STARTED" | "AUTH_CALLBACK_GET_USER_FINISHED"
   | "AUTH_CALLBACK_SIGN_OUT_STARTED" | "AUTH_CALLBACK_SIGN_OUT_FINISHED"
@@ -26,6 +27,15 @@ export function callbackErrorFields(error: unknown): Fields {
   const name = (item: unknown) => typeof item === "string" && errorNames.has(item) ? item : "unclassified";
   const code = (item: unknown) => typeof item === "string" && errorCodes.has(item) ? item : null;
   return { errorName: name(value?.name), errorCode: code(value?.code), errorStatus: typeof value?.status === "number" && Number.isFinite(value.status) ? value.status : null, causeName: cause ? name(cause.name) : null, causeCode: code(cause?.code) };
+}
+
+export function redactCallbackCookieName(name: string): string {
+  const suffix = name.match(/-(auth-token(?:\.\d+|-code-verifier)?)$/)?.[1];
+  return suffix ? `sb-<project-ref>-${suffix}` : "redacted-cookie";
+}
+
+export function splitSetCookieHeaders(value: string): string[] {
+  return value ? value.split(/,\s*(?=[^;,=\s]+=[^;,]*)/) : [];
 }
 
 function settingSummary(name: string, value: string | undefined): Fields {

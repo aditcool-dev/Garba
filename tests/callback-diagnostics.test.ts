@@ -1,10 +1,16 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { callbackErrorFields, createCallbackDiagnostics, AUTH_CALLBACK_VERSION } from "../lib/supabase/callback-diagnostics";
+import { callbackErrorFields, createCallbackDiagnostics, AUTH_CALLBACK_VERSION, redactCallbackCookieName, splitSetCookieHeaders } from "../lib/supabase/callback-diagnostics";
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
 const diagnostics = () => createCallbackDiagnostics({ headers: new Headers({ "x-cloud-trace-context": "b95576cee56992abc6f57a38b495812e/123;o=1", cookie: "private-cookie", authorization: "Bearer private-token" }) });
 
 describe("callback diagnostics without credential disclosure or transport changes", () => {
+  it("redacts Supabase project references and splits serialized cookie headers without values", () => {
+    expect(redactCallbackCookieName("sb-private-project-auth-token.0")).toBe("sb-<project-ref>-auth-token.0");
+    expect(redactCallbackCookieName("sb-private-project-auth-token")).toBe("sb-<project-ref>-auth-token");
+    expect(redactCallbackCookieName("sb-private-project-auth-token-code-verifier")).toBe("sb-<project-ref>-auth-token-code-verifier");
+    expect(splitSetCookieHeaders("a=1; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/, b=2; Path=/")).toEqual(["a=1; Expires=Thu, 01 Jan 1970 00:00:00 GMT; Path=/", "b=2; Path=/"]);
+  });
   it("is opt-in and emits a version marker without a diagnostic fetch or logs by default", () => {
     vi.stubEnv("GARBA_AUTH_DIAGNOSTICS", "0");
     const log = vi.spyOn(console, "info").mockImplementation(() => {});

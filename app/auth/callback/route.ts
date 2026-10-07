@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import type { CookieOptions } from "@supabase/ssr";
 import { createAuthServerClient } from "@/lib/supabase/server";
 import { accountDestination, authErrorReason, isEligibleAccount, type AuthErrorReason } from "@/lib/auth-flow";
-import { callbackErrorFields, createCallbackDiagnostics } from "@/lib/supabase/callback-diagnostics";
+import { callbackErrorFields, createCallbackDiagnostics, redactCallbackCookieName, splitSetCookieHeaders } from "@/lib/supabase/callback-diagnostics";
 
 export const dynamic = "force-dynamic";
 
@@ -28,7 +28,22 @@ export async function GET(request: NextRequest) {
       // The estimate excludes it and does not include host-added headers.
       response.headers.forEach((value, name) => { if (name !== "x-middleware-set-cookie") headerBytes += encoder.encode(`${name}: ${value}\r\n`).byteLength; });
       const setCookie = response.headers.get("set-cookie") || "";
-      diagnostics.stage("AUTH_CALLBACK_REDIRECT", { status: 303, destination: path.split("?")[0], cookieCount: pendingCookies.size, responseHeaderBytesEstimate: headerBytes, setCookieHeaderBytes: encoder.encode(setCookie).byteLength });
+      const getSetCookie = (response.headers as Headers & { getSetCookie?: () => string[] }).getSetCookie;
+      const cookieHeaders = typeof getSetCookie === "function" ? getSetCookie.call(response.headers) : splitSetCookieHeaders(setCookie);
+      const totalSetCookieBytes = encoder.encode(setCookie).byteLength;
+      cookieHeaders.forEach((cookieHeader, index) => {
+        const separator = cookieHeader.indexOf(";");
+        const equals = cookieHeader.indexOf("=");
+        const cookieValue = equals === -1 ? "" : cookieHeader.slice(equals + 1, separator === -1 ? cookieHeader.length : separator);
+        diagnostics.stage("AUTH_CALLBACK_SET_COOKIE_HEADER", {
+          cookieIndex: index,
+          cookieName: redactCallbackCookieName(cookieHeader.slice(0, Math.max(equals, 0))),
+          serializedHeaderBytes: encoder.encode(`set-cookie: ${cookieHeader}\r\n`).byteLength,
+          cookieValueBytes: encoder.encode(cookieValue).byteLength,
+          totalSetCookieBytes,
+        });
+      });
+      diagnostics.stage("AUTH_CALLBACK_REDIRECT", { status: 303, destination: path.split("?")[0], cookieCount: pendingCookies.size, responseHeaderBytesEstimate: headerBytes, setCookieHeaderBytes: totalSetCookieBytes });
     }
     return response;
   };

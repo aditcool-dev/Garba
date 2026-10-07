@@ -138,6 +138,11 @@ describe("SSR OAuth callback with the real Supabase PKCE/cookie clients", () => 
     for (const event of ["AUTH_CALLBACK_ENTERED", "AUTH_CALLBACK_CODE_PRESENT", "AUTH_CALLBACK_SUPABASE_CLIENT_CREATED", "AUTH_CALLBACK_EXCHANGE_STARTED", "AUTH_CALLBACK_COOKIE_WRITE_STARTED", "AUTH_CALLBACK_COOKIE_WRITE_FINISHED", "AUTH_CALLBACK_EXCHANGE_FINISHED", "AUTH_CALLBACK_GET_USER_STARTED", "AUTH_CALLBACK_GET_USER_FINISHED", "AUTH_CALLBACK_PROFILE_CHECK_STARTED", "AUTH_CALLBACK_PROFILE_CHECK_FINISHED", "AUTH_CALLBACK_REDIRECT"]) expect(events).toContain(event);
     expect(events.indexOf("AUTH_CALLBACK_COOKIE_WRITE_FINISHED")).toBeLessThan(events.indexOf("AUTH_CALLBACK_EXCHANGE_FINISHED"));
     expect(lines.find(line => line.event === "AUTH_CALLBACK_REDIRECT")).toMatchObject({ status: 303, destination: "/discover" });
+    const cookieLines = lines.filter(line => line.event === "AUTH_CALLBACK_SET_COOKIE_HEADER");
+    expect(cookieLines.length).toBeGreaterThanOrEqual(2);
+    expect(cookieLines.every(line => /^sb-<project-ref>-(auth-token(?:\.\d+|-code-verifier)?)$/.test(line.cookieName))).toBe(true);
+    expect(cookieLines.every(line => typeof line.serializedHeaderBytes === "number" && typeof line.cookieValueBytes === "number" && typeof line.totalSetCookieBytes === "number")).toBe(true);
+    expect(cookieLines.every(line => line.totalSetCookieBytes === lines.find(candidate => candidate.event === "AUTH_CALLBACK_REDIRECT").setCookieHeaderBytes)).toBe(true);
     expect(response.headers.get("X-GarbaMate-Auth-Version")).toBe("callback-trace-v1");
     expect(response.headers.get("X-GarbaMate-Auth-Request")).toBeTruthy();
     expect(JSON.stringify(lines)).not.toContain("private-auth-code");
