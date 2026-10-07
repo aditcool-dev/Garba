@@ -30,6 +30,7 @@ import { db } from "@/lib/supabase/client";
 import type { Match, Profile, RelationshipRow, RelationshipStatus } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 import { removeDecidedProfile } from "@/lib/discover-stack";
+import { normalizeSearch, rankSearchProfiles } from "@/lib/search-ranking";
 
 type StatusFilter = "Explore" | "matches" | "sent" | "passed";
 
@@ -110,6 +111,8 @@ export default function Discover() {
   const [detailRow, setDetailRow] = useState<RelationshipRow | null>(null);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  useEffect(() => { const timer = setTimeout(() => setSearchQuery(normalizeSearch(searchTerm)), 200); return () => clearTimeout(timer); }, [searchTerm]);
   const [filterBranch, setFilterBranch] = useState("All");
   const [filterYear, setFilterYear] = useState<number | "All">("All");
   const [filterNight, setFilterNight] = useState<number | "All">("All");
@@ -235,13 +238,11 @@ export default function Discover() {
   const filteredProfiles = useMemo(() => catalog.filter((profile) => {
     const relationship = statusById.get(profile.id);
     const status = relationship?.status || "new";
-    if (filterStatus === "matches" && status !== "matched") return false;
-    if (filterStatus === "sent" && status !== "sent") return false;
-    if (filterStatus === "passed" && status !== "passed") return false;
+    if (!searchQuery && filterStatus === "matches" && status !== "matched") return false;
+    if (!searchQuery && filterStatus === "sent" && status !== "sent") return false;
+    if (!searchQuery && filterStatus === "passed" && status !== "passed") return false;
     if (blockedUserIds.has(profile.id) || profile.is_hidden || profile.is_suspended || profile.is_banned) return false;
-    if (!searchTerm.trim() && filterStatus === "Explore" && (!myProfile || !eligibleCandidate(myProfile,profile,{liked:likedUserIds,passed:passedUserIds,matched:new Set(matchByPartnerId.keys()),blocked:blockedUserIds}))) return false;
-    const term = searchTerm.trim().toLowerCase();
-    if (term && ![profile.first_name, profile.branch, ...profile.styles].some((value) => value.toLowerCase().includes(term))) return false;
+    if (!searchQuery && filterStatus === "Explore" && (!myProfile || !eligibleCandidate(myProfile,profile,{liked:likedUserIds,passed:passedUserIds,matched:new Set(matchByPartnerId.keys()),blocked:blockedUserIds}))) return false;
     if (filterBranch !== "All" && profile.branch !== filterBranch) return false;
     if (filterYear !== "All" && profile.year !== filterYear) return false;
     if (filterNight !== "All" && !profile.available_nights.includes(filterNight)) return false;
@@ -249,11 +250,12 @@ export default function Discover() {
     if (filterExperience !== "All" && profile.experience !== filterExperience) return false;
     if (onlyMyNights && myProfile && !profile.available_nights.some((night) => myProfile.available_nights.includes(night))) return false;
     return true;
-  }), [catalog,statusById,profiles, matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds, blockedUserIds, filterStatus, searchTerm, filterBranch, filterYear, filterNight, filterStyle, filterExperience, onlyMyNights, myProfile]);
+  }), [catalog,statusById,profiles, matchByPartnerId, incomingSenderIds, likedUserIds, passedUserIds, blockedUserIds, filterStatus, searchQuery, filterBranch, filterYear, filterNight, filterStyle, filterExperience, onlyMyNights, myProfile]);
 
   const orderedProfiles = filteredProfiles;
-  const gridRows = relationshipRows.filter((row) => filteredProfiles.some((profile) => profile.id === row.profile.id));
-  const showGrid = Boolean(searchTerm.trim()) || filterStatus !== "Explore";
+  const gridRows = useMemo(() => rankSearchProfiles(filteredProfiles, searchQuery, myProfile).flatMap(profile => { const row = statusById.get(profile.id); return row ? [row] : []; }), [filteredProfiles, searchQuery, myProfile, statusById]);
+  const searchPending = normalizeSearch(searchTerm) !== searchQuery;
+  const showGrid = Boolean(searchTerm.trim() || searchQuery) || filterStatus !== "Explore";
 
   const restoredStack = restoredCards.filter((profile) => !blockedUserIds.has(profile.id));
   const freshStack = orderedProfiles.filter((profile) => !restoredCards.some((restored) => restored.id === profile.id));
@@ -517,7 +519,7 @@ export default function Discover() {
            {!showGrid && <aside className="hidden min-w-0 lg:block"><div className="space-y-4"><h2 className="text-lg font-bold text-white">Your filters</h2><button type="button" onClick={() => setFiltersOpen(true)} className="min-h-12 w-full rounded-2xl border border-[#ffc83d]/35 bg-[#ffc83d]/10 px-3 text-left text-xs font-bold text-[#ffe49a]">Open filter sheet →</button><button type="button" onClick={() => setOnlyMyNights((current) => !current)} aria-pressed={onlyMyNights} className="min-h-12 w-full rounded-2xl border border-white/10 px-3 text-left text-xs font-bold text-[#cbc9e8]">Only my nights {onlyMyNights ? "✓" : "○"}</button><p className="text-[11px] leading-5 text-[#aaa8d0]">← → ↑ keyboard shortcuts<br />Swipe right for Interested<br />Swipe left to Pass</p><button type="button" onClick={resetFilters} className="min-h-11 text-xs font-bold text-[#ffc83d]">Reset all filters</button></div></aside>}
 
            <section className="min-w-0" aria-label="Discover profile cards">
-             {showGrid ? <RelationshipGrid rows={gridRows} myProfile={myProfile} loading={!statusesLoaded && !feedError} onDecision={(row, decision) => void handleGridDecision(row, decision)} onOpen={(row) => { setDetailRow(row); setDetailsOpen(true); }} /> : person ? <div className="relative mx-auto w-full max-w-[460px]">
+              {showGrid ? <RelationshipGrid key={searchQuery} rows={searchPending ? [] : gridRows} myProfile={myProfile} loading={searchPending || (!statusesLoaded && !feedError)} emptyText={searchQuery ? `No one found for '${searchTerm.trim()}'. Try a name, branch or style.` : undefined} onDecision={(row, decision) => void handleGridDecision(row, decision)} onOpen={(row) => { setDetailRow(row); setDetailsOpen(true); }} /> : person ? <div className="relative mx-auto w-full max-w-[460px]">
               <div className="discover-stack relative">
                  {stack.slice(0, 3).map((profile, depth) => <SwipeCard key={profile.id} ref={depth === 0 ? topCard : undefined} depth={depth} progress={swipeProgress} disabled={tutorialOpen || howItWorksOpen || matchByPartnerId.has(profile.id)} returning={returningId === profile.id} person={profile} status={statusById.get(profile.id)?.status} vibeSent={statusById.get(profile.id)?.like_kind === "garba_vibe"} score={scoreFor(profile)} myNights={myNights} onOpenDetails={openDetails} onPass={triggerPass} onInterested={triggerLike} isMatched={matchByPartnerId.has(profile.id)} canDecide={checkDecision} onDecide={completeDecision} />)}
               </div>

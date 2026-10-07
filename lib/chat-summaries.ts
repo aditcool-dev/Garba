@@ -24,9 +24,9 @@ export function useChatSummaries(matches: Match[], userId?: string) {
         pending.delete(match.id);
         const version = (versions.get(match.id) || 0) + 1;
         versions.set(match.id, version);
-        void db.getMessages(match.id).then((rows) => {
+        void Promise.all([db.getMessages(match.id), db.getChatUnreadCounts()]).then(([rows, unread]) => {
           if (disposed || versions.get(match.id) !== version) return;
-          setSummaries((old) => ({ ...old, [match.id]: { count: rows.length, lastMessage: rows[rows.length - 1], unread: rows.filter((row) => row.sender_id !== userId && !row.read_at).length } }));
+          setSummaries((old) => ({ ...old, [match.id]: { count: rows.length, lastMessage: rows[rows.length - 1], unread: Number(unread.find(row => row.match_id === match.id)?.unread_count || 0) } }));
         }).catch((error) => console.warn("[chat summaries] refresh", error));
       }, 50));
     };

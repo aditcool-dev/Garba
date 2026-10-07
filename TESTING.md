@@ -1,5 +1,33 @@
 # Testing report
 
+## Current search/receipt release
+
+- `tsc --noEmit`, lint, production build and **35 tests in 10 files pass**, retaining all existing tests. New ranking tests cover requested names, exact words, compatibility, stable alphabetic ties, mixed case/diacritics and branch/style/bio matches without identifier/email matches. Status tests cover all tick states, opt-out, retry, monotonic late-response merging and >=4.5:1 cyan/grey contrast on the outgoing gradient.
+- Migration `014_message_receipts.sql` ran twice successfully in both disposable SQL/browser databases. `tests/message-receipts.integration.sql` passes real authenticated SQL for recipient-only/idempotent delivered/read acknowledgement, server-side opt-out, private unread clearing, direct-body/status-edit and forged receipt INSERT denial, outsider denial, exact epoch filtering (including an old message postdated to 2099 and denial of legacy null-epoch UUID reuse), quiet blocked/unmatched calls and duplicate-free UUID retry. Existing unmatch, health/sample/trust/unread/report, Auth Admin-ordering and status/Vibe/quota suites also pass.
+- The final production build passes **5 dedicated search/receipt groups, 7 mobile-polish groups, 7 follow-up groups, 21 UI/layout checks and 5 auth groups**. The dedicated suite uses two confirmed, non-sample local college fixtures A/B through emulated Supabase Auth/HTTP/Phoenix. It disables three-second message polling to verify live UPDATE-driven ticks. B starts with no app context, then opens Discover (delivered), then visible Chat (read); stored reload and own-preview ticks also pass. Settings opt-out suppresses new read timestamps and B's own blue ticks while clearing B's own unread badge. Hidden/offscreen gating and both pre-save failure and committed-send/lost-ack retry pass without duplicates.
+- Search browser verification uses mixed statuses, requested names plus 32 additional prefixes: best 30 first, Load more, stable status-independent relevance, normalized query, exact empty copy and rapid input cancellation. The broader four-viewport suite continues to pass; its unmatched search expectation now correctly retains a searchable New tile while removing its Chat action.
+- Expected injected send/unmatch/missing-feed/stale-generation errors are successful negative-path checks. The initial follow-up run exceeded a four-minute harness timeout; the completed run used a longer timeout. Initial UI-driver runs exposed pre-existing fixture/scroll timing assumptions; reloading before the injected prior-like snapshot, waiting for flight settlement and explicitly scrolling above the fixed nav resolve those checks without weakening the assertions.
+
+### SQL and browser reproduction
+
+On fresh disposable `_tests` databases apply `tests/supabase-bootstrap.sql`, then migrations **001–014**. Run SQL suites in a separate database from browser-reset drivers. Build with fixture-only public environment variables and start the production server at port 3101.
+
+```bash
+# Real SQL checks (local/disposable database, never a live project):
+psql -v ON_ERROR_STOP=1 -d garba_receipt_tests -f tests/message-receipts.integration.sql
+
+# Production-browser verification; transport emulated, SQL real:
+GARBA_TEST_URL=http://127.0.0.1:3101 \
+GARBA_CHROME_PATH=/path/to/chromium \
+GARBA_PSQL=/path/to/psql \
+GARBA_TEST_DATABASE=garba_tests \
+node scripts/verify-search-receipts.cjs
+```
+
+New artifacts: `/tmp/omnirush/search-receipts/results.json` and `sent.png`, `delivered.png`, `read.png`, `chat-list-read.png`, `settings-off.png`, `read-receipts-off.png`, `failed-retry.png`, `search-best-30.png`. Configure `GARBA_RECEIPT_ARTIFACTS` for another output directory. Old `failure.png` files are debugging artifacts, not final success evidence. Run this and the other SQL-backed reset drivers sequentially if they share a database.
+
+No hosted migration, production account operation, hosted Realtime delivery or physical-device/native Safari test was performed. Local Auth/Phoenix HTTP is emulated; PostgreSQL authorization, triggers, RPCs and RLS are real. Older sections below retain earlier release history and its test counts/performance observations.
+
 See `HEALTH_CHECK.md` for the current detailed results, artifacts, reproduction instructions and limits.
 
 - TypeScript, ESLint and production build passed.
@@ -10,7 +38,7 @@ See `HEALTH_CHECK.md` for the current detailed results, artifacts, reproduction 
 
 Supabase Auth/Realtime/Storage HTTP transport was emulated for authenticated tests; this is not a claim of authenticated live-project verification, actual email delivery or physical-phone performance. A limited read-only anonymous smoke check reached the previously configured live project's public APIs. Untracked copied `.kilo` tests are excluded from application test discovery.
 
-## Mobile polish artifacts and reproduction
+## Prior mobile polish artifacts and reproduction
 
 `scripts/verify-mobile-polish.cjs` resets a disposable database whose name must end `_tests`. Apply `tests/supabase-bootstrap.sql` and migrations **001–013** to a fresh database; use a separate disposable database for SQL integration suites. Never point fixture-reset drivers at a live project. Build with test-only public Supabase configuration and run `next start -p 3101` before the browser drivers.
 

@@ -10,6 +10,8 @@ import { db } from "@/lib/supabase/client";
 import type { Message, Profile } from "@/lib/supabase/types";
 import { useRelationships } from "@/lib/relationships-context";
 import { MatchActions } from "@/components/match-actions";
+import { MessageStatus } from "@/components/message-status";
+import { mergeMessage } from "@/lib/message-receipts";
 
 const CONVERSATION_STARTERS = [
   "Which Navratri nights are you going?",
@@ -21,7 +23,7 @@ const CONVERSATION_STARTERS = [
 export default function ChatPage() {
   const params = useParams();
   const matchId = (params?.id as string) || "";
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const { matches, loading: matchesLoading, refetch: refetchMatches } = useRelationships();
   const activeMatch=matches.find((match)=>match.id===matchId||match.user_a===matchId||match.user_b===matchId);
 
@@ -33,6 +35,10 @@ export default function ChatPage() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const messageViewport = useRef<HTMLDivElement>(null);
+  const sendLocks = useRef(new Set<string>());
+  const chatGeneration = useRef("");
+  chatGeneration.current = `${activeMatch?.id || ""}:${activeMatch?.chat_started_at || ""}`;
 
   useEffect(() => {
     let cancelled=false;
@@ -42,29 +48,66 @@ export default function ChatPage() {
     setNotFound(false);setLoading(true);setPartner(activeMatch.partner||null);setActiveChatId(activeMatch.id);
     const generation=activeMatch.chat_started_at||activeMatch.created_at;
     void db.getMessages(activeMatch.id).then((rows)=>{if(!cancelled){setMessages(rows.filter((message)=>message.created_at>=generation));setLoading(false);}}).catch(()=>{if(!cancelled){setNotFound(true);setLoading(false);}});
-    const read=()=>{void db.markChatRead(activeMatch.id).catch(error=>console.warn("[chat] read status",error));};
-    read();
-    const unsubscribe=db.subscribeToMessages(activeMatch.id,(message)=>{if(!cancelled&&message.created_at>=generation){setMessages((rows)=>rows.some((row)=>row.id===message.id)?rows:[...rows,message]);read();}});
+    const unsubscribe=db.subscribeToMessages(activeMatch.id,(message)=>{if(!cancelled&&message.chat_started_at===generation&&message.created_at>=generation){setMessages((rows)=>{const old=rows.find(row=>row.id===message.id), merged=mergeMessage(old,message);if(old&&JSON.stringify(old)===JSON.stringify(merged))return rows;return old?rows.map(row=>row.id===message.id?merged:row):[...rows,message];});}});
     return ()=>{cancelled=true;unsubscribe();};
   }, [matchId,user,matchesLoading,activeMatch?.id,activeMatch?.chat_started_at]);
 
+  const lastMessageId = messages[messages.length - 1]?.id;
+  const failedCount = messages.filter(message => message.local_status === "failed").length;
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [lastMessageId, failedCount]);
+
+  useEffect(() => {
+    const viewport = messageViewport.current;
+    if (!viewport || !activeMatch || !user || loading || notFound) return;
+    let busy = false;
+    let disposed = false;
+    const acknowledged = new Set<string>();
+    const readVisible = () => {
+      if (disposed || busy || document.visibilityState !== "visible") return;
+      const bounds = viewport.getBoundingClientRect();
+      const nav = document.querySelector<HTMLElement>('nav[aria-label="Primary navigation"]')?.getBoundingClientRect();
+      const viewportBottom = nav && nav.width > window.innerWidth / 2 ? Math.min(window.innerHeight, nav.top) : window.innerHeight;
+      const ids = Array.from(viewport.querySelectorAll<HTMLElement>("[data-incoming-message]")).filter(element => {
+        const rect = element.getBoundingClientRect();
+        return rect.bottom > Math.max(0, bounds.top) && rect.top < Math.min(viewportBottom, bounds.bottom) && !acknowledged.has(element.dataset.incomingMessage!);
+      }).map(element => element.dataset.incomingMessage!);
+      if (!ids.length) return;
+      busy = true;
+      void db.markChatRead(activeMatch.id, ids).then(() => { ids.forEach(id => acknowledged.add(id)); busy = false; readVisible(); }).catch(error => { busy = false; console.warn("[chat] read status", error); });
+    };
+    const observer = new IntersectionObserver(readVisible, { root: null, threshold: 0.1 });
+    viewport.querySelectorAll("[data-incoming-message]").forEach(element => observer.observe(element));
+    viewport.addEventListener("scroll", readVisible); window.addEventListener("scroll", readVisible); document.addEventListener("visibilitychange", readVisible);
+    readVisible();
+    return () => { disposed = true; observer.disconnect(); viewport.removeEventListener("scroll", readVisible); window.removeEventListener("scroll", readVisible); document.removeEventListener("visibilitychange", readVisible); };
+  }, [messages, activeMatch?.id, activeMatch?.chat_started_at, user?.id, profile?.read_receipts_enabled, loading, notFound]);
+
+  const send = async (message: Message) => {
+    if (!user || !activeMatch || sendLocks.current.has(message.id)) return;
+    const token = chatGeneration.current;
+    sendLocks.current.add(message.id); setSending(true);
+    setMessages(rows => rows.map(row => row.id === message.id ? { ...row, local_status: "sending" } : row));
+    try {
+      const saved = await db.sendMessage(activeMatch.id, user.id, message.body, message.chat_started_at, message.id);
+      if (chatGeneration.current !== token) return;
+      setMessages(rows => rows.some(row => row.id === saved.id) ? rows.map(row => row.id === saved.id ? mergeMessage(row,saved) : row) : [...rows, saved]);
+    } catch {
+      if (chatGeneration.current === token) setMessages(rows => rows.map(row => row.id === message.id ? { ...row, local_status: "failed" } : row));
+      await refetchMatches();
+    } finally { sendLocks.current.delete(message.id); setSending(sendLocks.current.size > 0); }
+  };
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!text.trim() || !user || !partner || sending || !activeMatch) return;
 
-    setSending(true);
     const content = text.trim();
     setText("");
-
-    try {
-      const newMsg=await db.sendMessage(activeMatch.id,user.id,content,activeMatch.chat_started_at||activeMatch.created_at);
-      setMessages((prev)=>prev.some((message)=>message.id===newMsg.id)?prev:[...prev,newMsg]);
-    } catch {setNotFound(true);setMessages([]);await refetchMatches();}
-    finally {setSending(false);}
+    const pending: Message = { id: crypto.randomUUID(), match_id: activeMatch.id, sender_id: user.id, body: content, created_at: new Date().toISOString(), chat_started_at: activeMatch.chat_started_at || activeMatch.created_at, read_at: null, delivered_at: null, local_status: "sending" };
+    setMessages(rows => [...rows, pending]);
+    await send(pending);
   };
 
   if (!user) {
@@ -127,19 +170,21 @@ export default function ChatPage() {
           <div className="text-[11px] leading-5 text-[#ffe9a3]"><p className="font-bold text-[#ffd166]">Campus safety first</p><p>Meet at official BMSCE festival venues, in public, with friends. Never share passwords, bank OTPs, or money.</p></div>
         </div>
 
-        <div className="min-h-[45vh] max-h-[58vh] overflow-y-auto rounded-[26px] border border-white/10 bg-[#0d0929]/60 p-4 shadow-inner sm:p-5" aria-live="polite">
+        <div ref={messageViewport} className="min-h-[45vh] max-h-[58vh] overflow-y-auto rounded-[26px] border border-white/10 bg-[#0d0929]/60 p-4 shadow-inner sm:p-5" aria-live="polite">
           {visibleMessages.length === 0 ? (
             <div className="flex min-h-[34vh] flex-col items-center justify-center px-4 text-center"><div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-[#f35ca8]/10 text-2xl" aria-hidden="true">👋</div><p className="mt-4 max-w-xs text-sm leading-6 text-[#cbc9e8]">Say hello to {partnerName} and make a plan for the floor.</p><p className="mt-1 text-[11px] text-[#aaa8d0]">Start with a chip below or write your own.</p></div>
           ) : (
-            <div className="space-y-3">
-              {visibleMessages.map((message) => {
+            <div>
+              {visibleMessages.map((message, index) => {
                 const isMe = message.sender_id === user.id || message.sender_id === "current-user";
+                const previous = visibleMessages[index - 1];
+                const grouped = previous?.sender_id === message.sender_id && new Date(message.created_at).getTime() - new Date(previous.created_at).getTime() < 5 * 60 * 1000;
                 const time = new Date(message.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
                 return (
-                  <div key={message.id} className={`flex ${isMe ? "justify-end" : "justify-start"}`}>
-                    <div className={`max-w-[84%] rounded-[22px] px-4 py-3 shadow-lg sm:max-w-[72%] ${isMe ? "rounded-br-md bg-gradient-to-br from-[#e8459b] to-[#ff7a45] text-white" : "rounded-bl-md border border-white/10 bg-[#211952] text-[#f8f7ff]"}`}>
+                  <div key={message.id} data-message-id={message.id} {...(!isMe ? { "data-incoming-message": message.id } : {})} className={`flex ${isMe ? "justify-end" : "justify-start"} ${index ? grouped ? "mt-1" : "mt-3" : ""}`}>
+                    <div className={`max-w-[84%] rounded-[22px] px-4 py-3 shadow-lg sm:max-w-[72%] ${isMe ? "rounded-br-md bg-gradient-to-br from-[#55214b] to-[#573027] text-white" : "rounded-bl-md border border-white/10 bg-[#211952] text-[#f8f7ff]"}`}>
                       <p className="text-sm leading-6 [overflow-wrap:anywhere]">{message.body}</p>
-                      <div className={`mt-1.5 flex items-center justify-end gap-1.5 text-[10px] ${isMe ? "text-white/75" : "text-[#aaa8d0]"}`}><span>{time}</span>{isMe && <span aria-label="Sent">✓✓</span>}</div>
+                      <div className={`mt-1.5 flex items-center justify-end gap-1.5 text-[10px] ${isMe ? "text-[#b6bccb]" : "text-[#aaa8d0]"}`}><span>{time}</span>{isMe && <MessageStatus message={message} readReceipts={profile?.read_receipts_enabled !== false} onRetry={() => void send(message)} />}</div>
                     </div>
                   </div>
                 );

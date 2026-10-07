@@ -14,6 +14,15 @@ export default function Settings() {
   const [isHidden, setIsHidden] = useState(profile?.is_hidden || false);
   const [partnerPref, setPartnerPref] = useState(profile?.partner_preference || "Everyone");
   const [savedMsg, setSavedMsg] = useState<string | null>(null);
+  const [receiptsBusy, setReceiptsBusy] = useState(false);
+  const [receiptsError, setReceiptsError] = useState<string | null>(null);
+  const toggleReceipts = async (enabled: boolean) => {
+    if (!user || receiptsBusy) return;
+    setReceiptsBusy(true); setReceiptsError(null);
+    try { await db.upsertProfile({ id: user.id, read_receipts_enabled: enabled }); await refreshProfile(); setSavedMsg(enabled ? "Read receipts on" : "Read receipts off"); }
+    catch { setReceiptsError("Couldn’t update read receipts. Please try again."); }
+    finally { setReceiptsBusy(false); }
+  };
 
   const handleToggleHidden = async (hidden: boolean) => {
     setIsHidden(hidden);
@@ -69,6 +78,8 @@ export default function Settings() {
             <div className="border-b border-white/10 p-5 sm:p-6"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">Profile & account</p><h2 className="display-font mt-1 text-xl font-bold text-white">Keep your details fresh</h2></div>
             <div className="space-y-2 p-5 sm:p-6"><Link href="/onboarding" className="block"><Button variant="secondary" className="w-full justify-between px-4 text-xs">Edit full profile details <span aria-hidden="true">→</span></Button></Link><Button variant="ghost" onClick={() => signOut()} className="w-full text-xs text-[#ffd166]">Sign out</Button><button type="button" onClick={handleDeleteAccount} className="w-full rounded-full px-4 py-3 text-center text-xs font-semibold text-red-300 transition hover:bg-red-500/10 hover:text-red-200">Delete account & data</button></div>
           </Card>
+
+          <Card><div className="flex items-center justify-between gap-4"><div><h2 className="text-sm font-bold">Read receipts</h2><p className="mt-1 text-xs leading-5 text-[#aaa8d0]">When off, you won’t send read receipts or see blue ticks on your messages. Delivery ticks stay on.</p></div><button type="button" role="switch" aria-label="Read receipts" aria-checked={profile?.read_receipts_enabled !== false} disabled={!user || receiptsBusy} onClick={() => void toggleReceipts(profile?.read_receipts_enabled === false)} className={`flex min-h-11 w-14 shrink-0 items-center rounded-full border p-1 focus-visible:outline-2 focus-visible:outline-[#ffd166] ${profile?.read_receipts_enabled !== false ? "border-[#f35ca8] bg-[#f35ca8]" : "border-white/20 bg-white/10"}`}><span className={`h-6 w-6 rounded-full bg-white transition-transform ${profile?.read_receipts_enabled !== false ? "translate-x-6" : "translate-x-0"}`} /></button></div>{receiptsError && <p role="alert" className="mt-3 text-xs text-rose-200">{receiptsError}</p>}</Card>
 
           <div className="flex items-start gap-3 rounded-[24px] border border-[#2dd4bf]/20 bg-[#123e4a]/25 p-4 sm:p-5"><span className="text-xl" aria-hidden="true">🛡️</span><div><p className="text-xs font-bold text-[#73f4df]">Campus privacy promise</p><p className="mt-1 text-[11px] leading-5 text-[#b4d9d7]">Your raw email, password hashes, and private contact details are never shown to other students. GarbaMate uses row-level access controls for profile data.</p><Link href="/privacy" className="mt-2 inline-block text-[11px] font-bold text-[#73f4df] underline decoration-[#73f4df]/30 underline-offset-2">Read privacy details</Link></div></div>
         </div>

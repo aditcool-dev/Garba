@@ -24,6 +24,7 @@ export interface Profile {
   onboarding_complete: boolean;
   is_demo: boolean;
   is_verified?: boolean;
+  read_receipts_enabled?: boolean;
   has_seen_discover_tutorial?: boolean;
   last_active_at?: string;
   created_at: string;
@@ -74,6 +75,8 @@ export interface Message {
   body: string;
   created_at: string;
   read_at: string | null;
+  delivered_at?: string | null;
+  local_status?: "sending" | "failed";
   chat_started_at?: string;
 }
 

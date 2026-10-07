@@ -2,7 +2,7 @@ import type { Profile } from "./supabase/types";
 
 // This explicit projection keeps internal flags, auth metadata and legacy fields
 // out of profile responses. UUIDs remain internal relationship keys, never labels.
-export const PROFILE_FIELDS = "id,first_name,age,gender,branch,year,bio,experience,styles,looking_for,available_nights,interests,partner_preference,photo_path,is_hidden,is_suspended,is_banned,onboarding_complete,has_seen_discover_tutorial,is_verified,created_at,updated_at";
+export const PROFILE_FIELDS = "id,first_name,age,gender,branch,year,bio,experience,styles,looking_for,available_nights,interests,partner_preference,photo_path,is_hidden,is_suspended,is_banned,onboarding_complete,has_seen_discover_tutorial,is_verified,read_receipts_enabled,created_at,updated_at";
 const markers = /demo-|bms-|\b\d[bB][mM]\d{2}[a-zA-Z]{2}\d{3}\b|\bdemo\b/i;
 const strings = (value: unknown): string[] => Array.isArray(value) ? [...new Set(value.filter((v): v is string => typeof v === "string" && !markers.test(v)))] : [];
 
@@ -23,6 +23,7 @@ export function normalizeProfile(value: unknown): Profile | null {
     photo_path: photo || null, is_hidden: row.is_hidden === true, is_suspended: row.is_suspended === true, is_banned: row.is_banned === true,
     onboarding_complete: row.onboarding_complete === true, is_demo: false, is_verified: row.is_verified === true && row.is_sample !== true,
     has_seen_discover_tutorial: row.has_seen_discover_tutorial === true, created_at: text("created_at"), updated_at: text("updated_at"),
+    read_receipts_enabled: row.read_receipts_enabled !== false,
   };
 }
 

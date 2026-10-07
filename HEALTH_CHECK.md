@@ -1,5 +1,11 @@
 # GarbaMate health check and deployment
 
+## Current search ranking / message receipts release
+
+Apply **`supabase/migrations/014_message_receipts.sql`** after 013 **before deploying this frontend**. It adds delivery timestamps/default-on receipt preference, recipient/epoch-safe delivery and read RPCs, private opt-out seen state for own unread badges, and UUID-idempotent sending. No reseeding or historical-message reset is needed. Run the entire file in Supabase SQL Editor, not just the column ALTERs; its grants, RPCs, index and Realtime setup are part of the contract.
+
+Current verification: TypeScript, lint, build, 35 application tests, all five dedicated receipt/search browser groups, the existing mobile/UI/auth/follow-up drivers and real SQL receipt/security/epoch plus health/unmatch/auth/status suites pass. Detailed decisions, the unread/privacy trade-off, reproduction commands and current artifacts are in `DECISIONS.md` and `TESTING.md`. Hosted Auth/Realtime and native physical-device behavior are not verified here. Earlier sections retain the prior health investigation/deployment history.
+
 ## Current mobile-polish verification — 7 October 2026
 
 The final polished production build passes TypeScript, lint, 27 application tests, seven mobile-polish groups, seven adapted follow-up groups, 21 responsive/swipe UI checks and five auth groups. Disposable SQL checks pass for statuses/notifications/Vibe/quota, unmatch/epoch/RLS, health/sample/trust/unread/report and Auth Admin metadata ordering. The preexisting Vibe quota SELECT was ambiguous between a PL/pgSQL variable and a column; migration **013** repairs that clause for already-applied 012 and was applied twice successfully. The updated 012 also fixes fresh installations.

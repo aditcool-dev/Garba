@@ -147,14 +147,16 @@ export const db = {
     if (!match) return [];
     return check(await client().from("messages").select("*").eq("match_id", matchId).eq("chat_started_at", match.chat_started_at || match.created_at).gte("created_at", match.chat_started_at || match.created_at).order("created_at"), "messages") || [];
   },
-  async sendMessage(matchId: string, senderId: string, body: string, generation?: string): Promise<Message> {
+  async sendMessage(matchId: string, senderId: string, body: string, generation?: string, messageId = crypto.randomUUID()): Promise<Message> {
     const match = await this.getChatMatch(matchId);
     if (!match || ![match.user_a, match.user_b].includes(senderId) || generation !== match.chat_started_at) throw new Error("Chat no longer available");
-    const message = check(await client().from("messages").insert({ match_id: matchId, sender_id: senderId, body, chat_started_at: generation }).select().single(), "send message");
+    const message = check(await client().rpc("send_chat_message", { p_match_id: matchId, p_message_id: messageId, p_body: body, p_chat_started_at: generation }).single<Message>(), "send message");
     if (!message) throw new Error("Missing message response");
     return message;
   },
-  async markChatRead(matchId: string) { check(await client().rpc("mark_chat_read", { p_match_id: matchId }), "read messages"); },
+  async markMessagesDelivered(matchId: string) { check(await client().rpc("mark_messages_delivered", { p_match_id: matchId }), "delivered messages"); },
+  async markChatRead(matchId: string, messageIds?: string[]) { check(await client().rpc("mark_chat_read", { p_match_id: matchId, ...(messageIds ? { p_message_ids: messageIds } : {}) }), "read messages"); },
+  async getChatUnreadCounts(): Promise<Array<{ match_id: string; unread_count: number }>> { return check(await client().rpc("get_chat_unread_counts"), "unread counts") || []; },
   async createReport(report: { reporter_id: string; reported_user_id: string; reason: ReportReason; description?: string }) {
     const row = check(await client().from("reports").insert(report).select("id").single(), "report");
     if (!row) throw new Error("Missing report response");
@@ -185,9 +187,16 @@ export const db = {
   subscribeToMessages(matchId: string, changed: (message: Message) => void) {
     const stop = subscription(`messages:${matchId}`, channel => {
       channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "messages", filter: `match_id=eq.${matchId}` }, payload => changed(payload.new as Message));
+      channel.on("postgres_changes", { event: "UPDATE", schema: "public", table: "messages", filter: `match_id=eq.${matchId}` }, payload => changed(payload.new as Message));
     });
     const timer = setInterval(() => { void this.getMessages(matchId).then(rows => rows.forEach(changed)).catch(error => console.warn("[chat] refresh failed", error)); }, 3000);
     return () => { stop(); clearInterval(timer); };
+  },
+  subscribeToMessageArrivals(userId: string, received: (message: Message) => void) {
+    // One app-wide INSERT subscription; participant/epoch RLS filters delivery.
+    return subscription(`message-arrivals:${userId}`, channel => {
+      channel.on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, payload => received(payload.new as Message));
+    });
   },
   subscribeToNotifications(userId: string, changed: () => void) {
     return subscription(`notifications:${userId}`, channel => {

@@ -163,12 +163,17 @@ async function touchDrag(page, cdp, direction, commit=true, measure=false) {
     // for the resulting authoritative feed refresh before injecting pre-pass
     // history; otherwise that refresh can exclude the just-selected fixture row.
     if(!process.env.GARBA_SKIP_REPEATS){await discover.getByRole('button',{name:/^Explore\s*\d+(\+)?$/}).waitFor();await discover.waitForLoadState('networkidle');}
+    // Start the snapshot/Undo fixture on a settled page. A pending feed request
+    // from the 40-decision batch can otherwise observe the injected prior like
+    // and remove that candidate before the intended Pass is dispatched.
+    await discover.reload();await discover.locator('[data-top-card="true"]').waitFor();await discover.waitForLoadState('networkidle');
     const passedId=await topId(discover);
     const priorLike={id:'prior-like',from_user:me.id,to_user:passedId,kind:'interested',created_at:'2026-01-01T00:00:00Z'};
     store.likes.push(priorLike);
     await discover.evaluate(row=>localStorage.setItem('garbamate_likes',JSON.stringify([...JSON.parse(localStorage.getItem('garbamate_likes')||'[]'),row])),priorLike);
     await discover.getByRole('button',{name:/^Pass on /}).last().evaluate(button=>{button.click();button.click();button.click();});
     await waitNext(discover,passedId);
+    await discover.waitForTimeout(300);
     await discover.getByRole('button',{name:'Undo',exact:true}).click();
     await discover.waitForFunction(id=>document.querySelector('[data-top-card="true"]')?.dataset.swipeCard===id,passedId);
     await discover.waitForTimeout(350);
@@ -198,6 +203,7 @@ async function touchDrag(page, cdp, direction, commit=true, measure=false) {
     await discover.waitForTimeout(300);
     assert(await discover.evaluate(()=>scrollY)>40,'vertical card scroll blocked');
     await discover.getByRole('button',{name:/^Show interest in /}).scrollIntoViewIfNeeded();
+    await discover.evaluate(()=>window.scrollBy({top:180,behavior:'instant'}));
     const buttons=await discover.getByRole('button',{name:/^Show interest in /}).boundingBox();
     const nav=await discover.getByRole('navigation',{name:'Primary navigation'}).boundingBox();
     assert(buttons.y+buttons.height<=nav.y,'actions under nav');

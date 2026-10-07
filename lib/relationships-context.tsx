@@ -70,6 +70,23 @@ export function RelationshipsProvider({ children }: { children: React.ReactNode 
 
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(null), 4000); return () => clearTimeout(timer); }, [notice]);
 
+  const deliverySignature = `${user?.id || ""}:${matches.map(match => `${match.id}:${match.chat_started_at}`).sort().join(",")}`;
+  useEffect(() => {
+    if (!user) return;
+    const inflight = new Set<string>();
+    const receive = (id: string) => {
+      if (inflight.has(id)) return;
+      inflight.add(id);
+      void db.markMessagesDelivered(id).catch(error => console.warn("[receipts] delivery", error)).finally(() => inflight.delete(id));
+    };
+    matches.forEach(match => receive(match.id));
+    const stop = db.subscribeToMessageArrivals(user.id, message => { if (message.sender_id !== user.id && matches.some(match => match.id === message.match_id && match.chat_started_at === message.chat_started_at)) receive(message.match_id); });
+    const online = () => { if (document.visibilityState === "visible") matches.forEach(match => receive(match.id)); };
+    const timer = setInterval(online, 10000);
+    window.addEventListener("focus", online); document.addEventListener("visibilitychange", online);
+    return () => { stop(); clearInterval(timer); window.removeEventListener("focus", online); document.removeEventListener("visibilitychange", online); };
+  }, [deliverySignature]);
+
   const unmatch = useCallback((match: Match): Promise<void> => {
     if (!user) return Promise.reject(new Error("Sign in required"));
     const previous = pending.current.get(match.id);
