@@ -1,5 +1,7 @@
 # Deployment checklist
 
+- **Authentication proxy repair:** rebuild/redeploy the application with the relative callback Location and legacy-root internal rewrite. `AUTH_RUNTIME_DIAGNOSIS.md` records the live incorrect `http://bmsce-club.ai.studio:8080` redirect, before-fix reproduction and successful direct/HTTPS-proxy checks. Keep `NEXT_PUBLIC_SITE_URL=https://bmsce-club.ai.studio`; confirm the live callback now stays on HTTPS without `:8080`. No UI/SQL change. Use Node **22 or newer**, as required by the installed Supabase JS 2.117.2 packages; hosted Node/environment/logs were not inspectable.
+
 - **Authentication/onboarding repair:** deploy/rebuild the Next application; no new SQL is required. The server route `app/auth/callback/route.ts` must replace the old callback page, and `middleware.ts` must run on the host. Follow `AUTH_SETUP.md` for exact Supabase application redirect URLs, Google's separate Supabase callback URI, proxy/public origin configuration and Google Branding name/logo/domain verification. These hosted dashboard changes and live BMSCE OAuth verification were not performed in the local workspace.
 
 - **Search/receipt release:** run the entire SQL in `supabase/migrations/014_message_receipts.sql` after migrations 001–013, then deploy/rebuild the frontend. It is idempotent, requires no reseeding, and preserves prior message epochs. The new frontend requires the delivered column, receipt preference, receipt/unread RPCs and idempotent send RPC, so SQL must come first.

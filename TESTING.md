@@ -1,5 +1,28 @@
 # Testing report
 
+## Current authentication reverse-proxy repair
+
+- Before editing, live HTTP probes identified `/auth/callback` returning **303 to `http://bmsce-club.ai.studio:8080`**, followed by a connection timeout. Root/Discover/onboarding and the correct HTTPS error destination returned 200. SDK regressions reproduced the incorrect internal HTTP/8080 redirect for both successful new- and existing-user callbacks. Exact evidence and hosted-log/environment limitations are in `AUTH_RUNTIME_DIAGNOSIS.md`.
+- Final **61 tests in 12 files**, lint, typecheck and production build pass. Callback tests verify same-origin-relative response Location, retained session cookies and one code exchange even with internal proxy headers, a stale site setting or an untrusted forwarded hostname. Legacy root handling is an internal rewrite before browser hydration.
+- The final production-browser driver passes **14 groups directly and 14 through an HTTPS reverse proxy**. It starts with `npm run start`. The proxy sends internal HTTP `Host: proxy-upstream.invalid:8080` / forwarded headers to the Next upstream, leaves outgoing Locations untouched, and forwards chunked session cookies. All collected application responses are below 500; every callback Location is relative and resolves to the public browser origin. New/onboarding and existing/Discover, age 22, refresh/direct navigation, profile retry, actual persistent mobile Chromium restart and one exchange of a valid legacy-root OAuth code pass at 360/390/1280px.
+- Runtime logs contain successful startup and the existing standalone-output warning, with no exception stack. The warning is not treated as the 502 cause because the actual requests and auth flows respond. Hosted runtime logs, deployed server env/Node and actual hosted BMSCE Google sessions are inaccessible; these tests cannot certify that the live original 502 is fully resolved before deployment. Google/GoTrue is emulated; actual Next SDK/middleware/route/PKCE/cookies and PostgreSQL/RLS execute.
+- Final artifacts/logs: `/tmp/omnirush/auth-flow/` (direct) and `/tmp/omnirush/auth-flow-proxy/` (HTTPS proxy). Use the fixture build/certificate/database prerequisites below, then run the modes **sequentially** because both reset `garba_auth_tests` and use port 3101:
+
+```bash
+# Fixture build; leave NEXT_PUBLIC_SITE_URL unset to exercise origin independence.
+NEXT_PUBLIC_SUPABASE_URL=https://localhost:55440 \
+NEXT_PUBLIC_SUPABASE_ANON_KEY=auth-public-fixture-key-not-a-secret npm run build
+
+GARBA_CHROME_PATH=/path/to/chromium GARBA_PSQL=/path/to/psql \
+node scripts/verify-auth-flow.cjs
+
+GARBA_AUTH_PROXY=1 GARBA_ARTIFACTS=/tmp/omnirush/auth-flow-proxy \
+GARBA_CHROME_PATH=/path/to/chromium GARBA_PSQL=/path/to/psql \
+node scripts/verify-auth-flow.cjs
+```
+
+Proxy mode defaults to `https://localhost:55441` for the browser and `http://127.0.0.1:3101` for Next. `GARBA_NEXT_TEST_URL` and `GARBA_TEST_URL` can override them. The two modes share the same `https://localhost:55440` Supabase fixture, compiled browser configuration and local certificate. The driver stops the complete npm/Next process group after verification. Older sections below describe the preceding release and its prior counts/absolute-origin implementation.
+
 ## Current authentication/onboarding repair
 
 - **59 tests in 12 files**, TypeScript, lint and production build pass. `tests/auth-callback.test.ts` uses the actual browser/server Supabase SDK cookie/PKCE clients, not a mocked exchange implementation. It verifies S256 verifier equality, one exchange, complete/incomplete/absent profile routing, replay and expired-code recovery, genuine failure, preserved session on profile outage, network errors, college/confirmation/sample restrictions, middleware request/response cookie refresh and public proxy/origin handling. `tests/onboarding-auth.test.tsx` exercises the real controls, ages 18–22, empty editing, invalid/underage validation, actual UUID submission and failed/expired-session retry.

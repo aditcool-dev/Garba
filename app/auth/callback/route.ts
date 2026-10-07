@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import type { CookieOptions } from "@supabase/ssr";
-import { authRequestOrigin, createAuthServerClient } from "@/lib/supabase/server";
+import { createAuthServerClient } from "@/lib/supabase/server";
 import { accountDestination, authErrorReason, isEligibleAccount, type AuthErrorReason } from "@/lib/auth-flow";
 
 export const dynamic = "force-dynamic";
@@ -8,7 +8,10 @@ export const dynamic = "force-dynamic";
 export async function GET(request: NextRequest) {
   const pendingCookies = new Map<string, { name: string; value: string; options: CookieOptions }>();
   const redirect = (path: string) => {
-    const response = NextResponse.redirect(new URL(path, authRequestOrigin(request)), 303);
+    // Location permits a relative URI. The browser resolves this against its
+    // public HTTPS origin, not the proxy's internal HTTP Host/port (e.g. 8080).
+    // Targets below are fixed application paths, never a user-supplied URL.
+    const response = new NextResponse(null, { status: 303, headers: { Location: path } });
     pendingCookies.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
     response.headers.set("Cache-Control", "private, no-store");
     response.headers.set("Referrer-Policy", "no-referrer");

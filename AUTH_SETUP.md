@@ -5,9 +5,9 @@
 This is **Next.js 15 App Router**, using `@supabase/ssr` on both sides:
 
 - `lib/supabase/client.ts`: one browser client; the SDK stores the PKCE verifier and persistent session in its standard cookies.
-- `lib/supabase/server.ts`: a new server client per request, with `getAll`/`setAll` cookie adapters and browser-facing origin resolution.
+- `lib/supabase/server.ts`: a new server client per request, with `getAll`/`setAll` cookie adapters.
 - `app/auth/callback/route.ts`: the only OAuth authorization-code exchange. It attaches every SDK cookie to its redirect, verifies the user through Supabase Auth, then selects the authenticated UUID's existing `profiles.onboarding_complete` flag.
-- `middleware.ts`: Next.js 15 session refresh, propagating refreshed cookies to both the downstream request and browser. The callback is deliberately excluded. Old Site URL redirects to `/?code=...` are forwarded before React/browser Auth can consume the code.
+- `middleware.ts`: Next.js 15 session refresh, propagating refreshed cookies to both the downstream request and browser. The callback is deliberately excluded. Old Site URL redirects to `/?code=...` are internally rewritten to the callback before React/browser Auth can consume the code.
 - `AuthProvider`/`AuthGate`: validated Supabase user and checked profile determine routing after restoration or auth-state events. No auth query runs inside the SDK's auth-state callback. A loading state prevents onboarding from mounting before the check; request generations discard late results after sign-out/account changes.
 
 ```text
@@ -26,19 +26,19 @@ The age control starts with `""`, retains raw digits or `""`, uses `inputMode="n
 
 ## Required hosted configuration
 
-`APP_ORIGIN` below means the **exact production origin**, including the actual hostname, such as `https://your-garbamate-host.example`. Replace placeholders with the real deployment values. The production origin and hosted Google/Supabase dashboards are not available in this checkout; these external settings have **not** been changed or verified.
+`APP_ORIGIN` below means the **exact production origin**, currently **`https://bmsce-club.ai.studio`**, provided during the proxy-error investigation. Hosted Google/Supabase dashboards and the build-host environment remain inaccessible; these external settings have **not** been changed or verified. See `AUTH_RUNTIME_DIAGNOSIS.md` for live HTTP evidence and the internal-port redirect repair.
 
 ### Build host
 
 ```dotenv
-NEXT_PUBLIC_SITE_URL=https://your-garbamate-host.example
+NEXT_PUBLIC_SITE_URL=https://bmsce-club.ai.studio
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-reference.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-existing-public-anon-or-publishable-key
 ```
 
 Set these **before building**; rebuild after changes. `NEXT_PUBLIC_SITE_URL` is an origin without a path/query. No Google secret or Supabase service-role key belongs in the public frontend configuration.
 
-Sign-in always uses `location.origin + '/auth/callback'`, so development does not jump to production and lose its verifier cookie. Browser/server clients use the same Supabase project/public key. Proxies must preserve the public `Host`, or send an `X-Forwarded-Host` matching the configured site plus `X-Forwarded-Proto: https`. Callback redirects use the browser-facing host rather than an internal Next listener address. Normalize any production hostname aliases **before starting login**, not midway through OAuth.
+Sign-in always uses `location.origin + '/auth/callback'`, so development does not jump to production and lose its verifier cookie. Browser/server clients use the same Supabase project/public key. Callback responses use relative `Location` headers, which the browser resolves against its existing public origin. This remains correct when the proxy exposes only an internal HTTP Host/port to Next; the callback no longer reconstructs or guesses a public origin from proxy headers. Normalize any production hostname aliases **before starting login**, not midway through OAuth.
 
 ### Supabase Dashboard → Authentication → URL Configuration
 

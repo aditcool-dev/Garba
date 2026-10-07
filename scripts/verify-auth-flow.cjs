@@ -3,11 +3,13 @@
 // Google/GoTrue transport is emulated, not a claim of hosted Google verification.
 const { chromium, devices } = require('@playwright/test');
 const { spawn, spawnSync } = require('child_process');
-const https = require('https'), fs = require('fs'), path = require('path');
+const https = require('https'), http = require('http'), fs = require('fs'), path = require('path');
 const { createHash, createHmac, randomUUID } = require('crypto');
 const assert = require('assert/strict');
 const root = path.resolve(__dirname, '..');
-const base = process.env.GARBA_TEST_URL || 'http://127.0.0.1:3101';
+const proxyMode = process.env.GARBA_AUTH_PROXY === '1';
+const base = process.env.GARBA_TEST_URL || (proxyMode ? 'https://localhost:55441' : 'http://127.0.0.1:3101');
+const nextUrl = proxyMode ? process.env.GARBA_NEXT_TEST_URL || 'http://127.0.0.1:3101' : base;
 const authUrl = process.env.GARBA_AUTH_FIXTURE_URL || 'https://localhost:55440';
 const artifacts = process.env.GARBA_ARTIFACTS || '/tmp/omnirush/auth-flow';
 const certificate = process.env.GARBA_AUTH_CERT || '/tmp/omnirush/auth-flow-fixture.pem';
@@ -16,6 +18,7 @@ const database = process.env.GARBA_TEST_DATABASE || 'garba_auth_tests';
 assert(database.endsWith('_tests'), 'Only use a disposable _tests database');
 assert(['localhost', '127.0.0.1'].includes(new URL(authUrl).hostname), 'Auth fixture must be local');
 assert(['localhost', '127.0.0.1'].includes(new URL(base).hostname), 'Next test host must be local');
+assert(['localhost', '127.0.0.1'].includes(new URL(nextUrl).hostname), 'Next upstream must be local');
 const psql = process.env.GARBA_PSQL || 'psql';
 const pgArgs = ['-h', process.env.GARBA_PGHOST || '/tmp/omnirush', '-p', process.env.GARBA_PGPORT || '55432', '-d', database, '-qAt', '-v', 'ON_ERROR_STOP=1'];
 const quote = value => value == null ? 'null' : typeof value === 'number' || typeof value === 'boolean' ? String(value) : `'${String(value).replaceAll("'", "''")}'`;
@@ -40,7 +43,7 @@ function reset() {
 }
 const flows = new Map(), codes = new Map(), refreshTokens = new Map(), emails = new Map(), requests = [], results = [];
 let latestEmailLink;
-const faults = { profile: false, auth: false, expiredCode: false, tokenNetwork: false, scaffoldName: false };
+const faults = { profile: false, auth: false, expiredCode: false, tokenNetwork: false, scaffoldName: false, rootCallback: false };
 const signingKey = 'local-test-HMAC-key-not-a-production-secret';
 function account(actor) {
   const row = rows(`select id,email,email_confirmed_at,raw_app_meta_data,raw_user_meta_data from auth.users where id=${quote(actor)}`)[0];
@@ -92,7 +95,7 @@ async function fixture(request, response) {
       const flow = flows.get(url.searchParams.get('state')); assert(flow?.actor);
       if (!account(flow.actor)) sql(`insert into auth.users(id,email,email_confirmed_at,raw_user_meta_data) values(${quote(flow.actor)},'new.cs24@bmsce.ac.in',now(),${quote(JSON.stringify({ first_name: faults.scaffoldName ? '1BM24CS001' : 'New Dancer' }))});`);
       const code = randomUUID(); codes.set(code, flow);
-      return redirect(response, flow.redirectTo + '?code=' + code);
+      return redirect(response, (faults.rootCallback ? base + '/' : flow.redirectTo) + '?code=' + code);
     }
     if (url.pathname === '/auth/v1/token') {
       const grant = url.searchParams.get('grant_type');
@@ -156,8 +159,21 @@ async function main() {
   fs.mkdirSync(artifacts, { recursive: true }); initialize();
   const authServer = https.createServer({ cert: fs.readFileSync(certificate), key: fs.readFileSync(privateKey) }, (req, res) => { void fixture(req, res); });
   await new Promise(resolve => authServer.listen(Number(new URL(authUrl).port), resolve));
+  let proxy;
+  if (proxyMode) {
+    proxy = https.createServer({ cert: fs.readFileSync(certificate), key: fs.readFileSync(privateKey) }, (req, res) => {
+      const headers = { ...req.headers, host: 'proxy-upstream.invalid:8080', 'x-forwarded-host': 'proxy-upstream.invalid:8080', 'x-forwarded-proto': 'http' };
+      const upstream = http.request(new URL(req.url, nextUrl), { method: req.method, headers }, incoming => {
+        // Deliberately do NOT repair Location: catch leaks of the internal origin.
+        res.writeHead(incoming.statusCode, incoming.headers); incoming.pipe(res);
+      });
+      upstream.on('error', error => { console.error('[test reverse proxy]', error.code); res.writeHead(502); res.end('Bad Gateway: local test upstream unavailable'); });
+      req.pipe(upstream);
+    });
+    await new Promise(resolve => proxy.listen(Number(new URL(base).port), resolve));
+  }
   const log = fs.openSync(path.join(artifacts, 'next.log'), 'w');
-  const next = spawn(process.execPath, [path.join(root, 'node_modules/next/dist/bin/next'), 'start', '-p', new URL(base).port], { cwd: root, env: { ...process.env, NODE_EXTRA_CA_CERTS: certificate, NEXT_PUBLIC_SUPABASE_URL: authUrl, NEXT_PUBLIC_SUPABASE_ANON_KEY: 'auth-public-fixture-key-not-a-secret' }, stdio: ['ignore', log, log] });
+  const next = spawn(process.platform === 'win32' ? 'npm.cmd' : 'npm', ['run', 'start'], { cwd: root, detached: process.platform !== 'win32', env: { ...process.env, PORT: new URL(nextUrl).port, NODE_EXTRA_CA_CERTS: certificate, NEXT_PUBLIC_SUPABASE_URL: authUrl, NEXT_PUBLIC_SUPABASE_ANON_KEY: 'auth-public-fixture-key-not-a-secret' }, stdio: ['ignore', log, log] });
   const launch = { headless: true, executablePath: process.env.GARBA_CHROME_PATH, args: ['--no-sandbox'] };
   let browser;
   const contexts = [];
@@ -165,17 +181,23 @@ async function main() {
   try {
     for (let i = 0; i < 100; i++) {
       if (next.exitCode !== null) throw new Error('Next server exited; inspect next.log');
-      try { if ((await fetch(base + '/login')).ok) break; } catch { /* startup */ }
+      try { if ((await fetch(nextUrl + '/login')).ok) break; } catch { /* startup */ }
       if (i === 99) throw new Error('Next server did not start');
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     browser = await chromium.launch(launch);
-    const errors = [];
+    const errors = [], appResponses = [];
+    function watch(page) {
+      page.on('pageerror', e => errors.push(e.message));
+      page.on('response', response => {
+        if (new URL(response.url()).origin === new URL(base).origin) appResponses.push({ status: response.status(), path: new URL(response.url()).pathname, location: response.headers().location || null });
+      });
+    }
     async function setup(width, state) {
       const context = await browser.newContext({ ...(width < 768 ? devices['Pixel 7'] : {}), viewport: { width, height: width < 768 ? 844 : 800 }, ignoreHTTPSErrors: true, storageState: state });
       contexts.push(context);
       await context.routeWebSocket('**/realtime/v1/**', socket => socket.close());
-      const page = await context.newPage(); page.on('pageerror', e => errors.push(e.message));
+      const page = await context.newPage(); watch(page);
       return { context, page };
     }
     const continueSetup = page => page.getByRole('button', { name: /^Continue/ }).click();
@@ -185,6 +207,14 @@ async function main() {
       await page.getByRole('link', { name: existing ? 'Existing BMSCE account' : 'New BMSCE account', exact: true }).click();
       await page.getByRole('link', { name: 'Allow', exact: true }).click();
     }
+    reset();
+    const anonymous = await setup(390); page = anonymous.page;
+    assert.equal((await page.goto(base + '/')).status(), 200);
+    assert.equal((await page.goto(base + '/discover')).status(), 200);
+    await page.goto(base + '/onboarding'); await page.waitForURL(base + '/login'); await page.getByRole('button', { name: /Continue with Google/ }).waitFor();
+    await page.goto(base + '/auth/callback'); await page.waitForURL(base + '/auth/error?reason=callback'); await page.getByRole('heading', { name: 'Unable to sign you in' }).waitFor();
+    await anonymous.context.close();
+    results.push({ check: 'Anonymous root/Discover respond; direct onboarding requires login; callback with no credentials safely reaches error UI without a gateway failure or loop', pass: true });
     for (const width of [360, 390, 1280]) {
       reset(); requests.length = 0; faults.scaffoldName = width === 360;
       const fresh = await setup(width); page = fresh.page;
@@ -281,25 +311,41 @@ async function main() {
     await page.goto(base + '/?code=legacy-already-consumed'); await page.waitForURL(base + '/discover'); await page.getByRole('textbox', { name: 'Search by name, branch, or style' }).waitFor();
     await guest.context.close(); results.push({ check: 'Unauthenticated onboarding goes to login; legacy Site URL callback is forwarded server-side and recovers verified session on original host', pass: true });
 
+    const rootFlow = await setup(390); page = rootFlow.page; faults.rootCallback = true;
+    const exchangesBeforeRoot = requests.filter(r => r.grant === 'pkce').length;
+    await google(page, true); await page.waitForURL(base + '/discover'); await page.getByRole('textbox', { name: 'Search by name, branch, or style' }).waitFor();
+    assert.equal(requests.filter(r => r.grant === 'pkce').length, exchangesBeforeRoot + 1);
+    faults.rootCallback = false; await rootFlow.context.close();
+    results.push({ check: 'Valid OAuth code returned to legacy root is rewritten internally, exchanged once by the server callback and navigates on the browser origin', pass: true });
+
     // A real Chromium process restart using its persisted cookie database.
     const persistentDir = fs.mkdtempSync(path.join(artifacts, 'persistent-chrome-'));
     const persistentOptions = { ...launch, ...devices['Pixel 7'], ignoreHTTPSErrors: true };
     let persistent = await chromium.launchPersistentContext(persistentDir, persistentOptions);
     contexts.push(persistent);
     await persistent.routeWebSocket('**/realtime/v1/**', socket => socket.close());
-    page = await persistent.newPage(); await google(page, true); await page.waitForURL(base + '/discover');
+    page = await persistent.newPage(); watch(page); await google(page, true); await page.waitForURL(base + '/discover');
     await page.getByRole('textbox', { name: 'Search by name, branch, or style' }).waitFor(); await persistent.close();
     persistent = await chromium.launchPersistentContext(persistentDir, persistentOptions);
     contexts.push(persistent);
     await persistent.routeWebSocket('**/realtime/v1/**', socket => socket.close());
-    page = await persistent.newPage(); await page.goto(base + '/login'); await page.waitForURL(base + '/discover'); await page.getByRole('textbox', { name: 'Search by name, branch, or style' }).waitFor(); await persistent.close();
+    page = await persistent.newPage(); watch(page); await page.goto(base + '/login'); await page.waitForURL(base + '/discover'); await page.getByRole('textbox', { name: 'Search by name, branch, or style' }).waitFor(); await persistent.close();
     results.push({ check: 'Mobile Chromium process closed/reopened: persistent Supabase cookie restores user and goes directly to Discover', pass: true });
     assert.deepEqual(errors, [], 'Browser runtime errors');
+    assert(appResponses.every(r => r.status < 500), 'Next/proxy returned a server or gateway error');
+    for (const response of appResponses.filter(r => r.location)) {
+      assert(response.location.startsWith('/') && !response.location.startsWith('//'), 'Callback leaked an absolute/internal origin');
+      assert.equal(new URL(response.location, base).origin, new URL(base).origin);
+    }
+    results.push({ check: `${proxyMode ? 'HTTPS reverse proxy forwarding internal HTTP Host:8080' : 'Direct production server'}: all app responses below 500; redirect headers stay on browser origin; no runtime errors`, pass: true });
   } catch (error) { if (page && !page.isClosed()) await page.screenshot({ path: path.join(artifacts, 'failure.png'), fullPage: true }); throw error; }
   finally {
-    faults.profile = faults.auth = faults.expiredCode = faults.tokenNetwork = faults.scaffoldName = false;
+    faults.profile = faults.auth = faults.expiredCode = faults.tokenNetwork = faults.scaffoldName = faults.rootCallback = false;
     await Promise.all(contexts.filter(c => !c.pages().every(p => p.isClosed())).map(c => c.close()));
-    await browser?.close(); next.kill(); await new Promise(resolve => authServer.close(resolve)); fs.closeSync(log);
+    await browser?.close();
+    if (next.exitCode === null && next.signalCode === null) { if (process.platform === 'win32') next.kill(); else process.kill(-next.pid, 'SIGTERM'); }
+    if (proxy) await new Promise(resolve => proxy.close(resolve));
+    await new Promise(resolve => authServer.close(resolve)); fs.closeSync(log);
     fs.writeFileSync(path.join(artifacts, 'results.json'), JSON.stringify(results, null, 2)); console.log(results);
   }
 }
