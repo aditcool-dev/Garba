@@ -31,11 +31,9 @@ function GoogleIcon({ className = "w-5 h-5" }: { className?: string }) {
 
 export default function Login() {
   const router = useRouter();
-  const { signInWithGoogle, signInWithOtp, signInWithPassword } = useAuth();
+  const { signInWithGoogle, signInWithOtp } = useAuth();
   const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
   const [linkSent, setLinkSent] = useState(false);
-  const [authMode, setAuthMode] = useState<"link" | "password">("link");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -77,20 +75,6 @@ export default function Login() {
     } else {
       setLinkSent(true);
       setMessage(msg || `Sign-in link sent to ${email.trim()}!`);
-    }
-  };
-
-  const handlePasswordLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!email || !password) return;
-    setLoading(true);
-    setError(null);
-    setMessage(null);
-
-    const { error: err } = await signInWithPassword(email, password);
-    setLoading(false);
-    if (err) {
-      setError(err);
     }
   };
 
@@ -181,41 +165,7 @@ export default function Login() {
           <span className="h-px flex-1 bg-white/10" />
         </div>
 
-        {/* Mode Toggle Tabs */}
-        <div className="flex rounded-xl bg-white/5 p-1 border border-white/10">
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode("link");
-              setError(null);
-            }}
-            className={`flex-1 rounded-lg py-2 text-xs font-bold transition ${
-              authMode === "link"
-                ? "bg-[#ffd166] text-black shadow-md font-black"
-                : "text-[#aab0d0] hover:text-white"
-            }`}
-          >
-            ✉️ Email Magic Link
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              setAuthMode("password");
-              setError(null);
-            }}
-            className={`flex-1 rounded-lg py-2 text-xs font-bold transition ${
-              authMode === "password"
-                ? "bg-[#ffd166] text-black shadow-md font-black"
-                : "text-[#aab0d0] hover:text-white"
-            }`}
-          >
-            🔑 Password
-          </button>
-        </div>
-
-        {/* Content based on tab */}
-        {authMode === "link" ? (
-          !linkSent ? (
+        {!linkSent ? (
             /* Email Link Request Form */
             <form onSubmit={handleSendLink} className="mt-5 space-y-4">
               <div>
@@ -290,47 +240,7 @@ export default function Login() {
                 </button>
               </div>
             </div>
-          )
-        ) : (
-          /* Password Form */
-          <form onSubmit={handlePasswordLogin} className="mt-5 space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-[#c5c9e8]">
-                BMSCE College Email
-              </label>
-              <input
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm outline-none transition focus:border-[#ffd166] text-white placeholder-white/30"
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="aditya.cs24@bmsce.ac.in"
-                required
-              />
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-[#c5c9e8]">
-                Password
-              </label>
-              <input
-                className="mt-1.5 w-full rounded-xl border border-white/10 bg-white/5 p-3 text-sm outline-none transition focus:border-[#ffd166] text-white placeholder-white/30"
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="••••••••"
-                required
-              />
-            </div>
-
-            <Button
-              type="submit"
-              disabled={loading}
-              className="w-full text-sm font-bold bg-[#ffd166] text-black hover:bg-[#ffd166]/90 py-3 shadow-md"
-            >
-              {loading ? "Signing in..." : "Sign In with Password"}
-            </Button>
-          </form>
-        )}
+          )}
 
         {/* Footer */}
         <div className="mt-6 pt-5 border-t border-white/10 text-center">
