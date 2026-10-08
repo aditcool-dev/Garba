@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { Button, Card } from "@/components/ui";
 import { BRANCHES } from "@/config/branches";
@@ -21,6 +21,18 @@ const TOTAL_STEPS = 10;
 const GARBA_STYLES = ["Traditional Garba", "Bollywood Garba", "Dandiya", "2-Taali", "3-Taali", "Fast Garba", "Any"];
 const AVAILABLE_INTERESTS = ["dance", "music", "food", "fashion", "photography", "coding", "fitness", "festivals"];
 const AVATAR_EMOJIS = ["🌸", "🕺", "💃", "🥻", "✨", "🥁", "⚡", "🎉"];
+
+type AuthIdentity = { id?: string; app_metadata?: Record<string, unknown>; user_metadata?: Record<string, unknown>; identities?: Array<{ provider?: string | null }> };
+
+function reliableIdentityName(account: AuthIdentity | null): string | null {
+  const isGoogle = account?.app_metadata?.provider === "google" || account?.identities?.some((identity) => identity.provider === "google");
+  if (!account || !isGoogle) return null;
+  for (const key of ["full_name", "name", "first_name"]) {
+    const value = account.user_metadata?.[key];
+    if (typeof value === "string" && value.trim()) return value.trim().slice(0, 40);
+  }
+  return null;
+}
 
 const STEP_TITLES = [
   "Choose your festival avatar",
@@ -50,13 +62,15 @@ const STEP_DESCRIPTIONS = [
 
 export default function Onboarding() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const isEditing = searchParams.get("edit") === "1";
   const { user, profile: existingProfile, refreshProfile } = useAuth();
   const [step, setStep] = useState(1);
 
   const [firstName, setFirstName] = useState(existingProfile?.first_name || "");
-  // A scaffold profile's database age is not the student's answer.
-  // Preserve raw input (including "") until validation/submission.
-  const [age, setAge] = useState("");
+  // A scaffold profile's database age is not the student's answer; retain a
+  // completed profile's age when this form is opened for editing.
+  const [age, setAge] = useState(existingProfile?.onboarding_complete ? String(existingProfile.age) : "");
   const [branch, setBranch] = useState(existingProfile?.branch || "CSE");
   const [year, setYear] = useState<number>(existingProfile?.year || 2);
   const [bio, setBio] = useState(existingProfile?.bio || "");
@@ -69,6 +83,31 @@ export default function Onboarding() {
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [identityName, setIdentityName] = useState<string | null>(null);
+  const [identityNameLoading, setIdentityNameLoading] = useState(true);
+
+  useEffect(() => {
+    let active = true;
+    setIdentityName(null);
+    setIdentityNameLoading(true);
+    const loadIdentityName = async () => {
+      const client = getSupabaseClient();
+      if (!client) { if (active) setIdentityNameLoading(false); return; }
+      try {
+        const { data, error } = await client.auth.getUser();
+        if (!active || error || data.user?.id !== user?.id) return;
+        const name = reliableIdentityName(data.user);
+        setIdentityName(name);
+        if (name) setFirstName(name);
+      } catch {
+        // The existing authenticated submission check remains authoritative.
+      } finally {
+        if (active) setIdentityNameLoading(false);
+      }
+    };
+    void loadIdentityName();
+    return () => { active = false; };
+  }, [user?.id]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -103,7 +142,6 @@ export default function Onboarding() {
   const handleFinish = async () => {
     const parsed = validateAge(age);
     if (parsed.error !== null) { setFormError(parsed.error); setStep(3); return; }
-    if (!firstName.trim()) { setFormError("Please enter your first name or nickname."); setStep(2); return; }
     if (saving) return;
     setSaving(true);
     setFormError(null);
@@ -112,9 +150,13 @@ export default function Onboarding() {
       const authenticated = client ? await client.auth.getUser() : null;
       const account = authenticated?.data.user || null;
       if (authenticated?.error || !isEligibleAccount(account) || account.id !== user?.id) throw new Error("Your sign-in session expired. Please sign in again.");
+      const lockedName = reliableIdentityName(account) || identityName;
+      const nameToSave = lockedName || firstName.trim();
+      if (!nameToSave) { setFormError("Please enter your first name or nickname."); setStep(2); return; }
+      if (lockedName) { setIdentityName(lockedName); setFirstName(lockedName); }
       await db.upsertProfile({
         id: account.id,
-        first_name: firstName.trim(),
+        first_name: nameToSave,
         age: parsed.age,
         gender: existingProfile?.gender || "Prefer not to say",
         branch,
@@ -130,14 +172,14 @@ export default function Onboarding() {
         onboarding_complete: true,
       });
       await refreshProfile();
-      router.replace("/discover");
+      router.replace(isEditing ? "/profile/me" : "/discover");
     } catch (error) {
       setFormError(error instanceof Error ? error.message : "Could not save your profile. Please try again.");
     } finally { setSaving(false); }
   };
 
   const handleContinue = () => {
-    if (step === 2 && !firstName.trim()) { setFormError("Please enter your first name or nickname."); return; }
+    if (step === 2 && !firstName.trim() && !identityNameLoading) { setFormError("Please enter your first name or nickname."); return; }
     if (step === 3) { const parsed = validateAge(age); if (parsed.error) { setFormError(parsed.error); return; } }
     setFormError(null);
     setStep(current => Math.min(TOTAL_STEPS, current + 1));
@@ -147,7 +189,7 @@ export default function Onboarding() {
   const description = STEP_DESCRIPTIONS[step - 1];
 
   return (
-    <AppShell title={`Profile setup · ${step}/${TOTAL_STEPS}`}>
+    <AppShell title={`${isEditing ? "Edit profile" : "Profile setup"} · ${step}/${TOTAL_STEPS}`}>
       <div className="mx-auto max-w-2xl pb-6">
         <div className="mb-5 flex items-end justify-between gap-4"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-[#ffd166]">Build your floor card</p><h1 className="display-font mt-1 text-2xl font-bold text-white sm:text-3xl">A few quick questions</h1></div><span className="text-xs font-bold text-[#aaa8d0]">{step} <span className="text-[#73789e]">/ {TOTAL_STEPS}</span></span></div>
         <div className="mb-5 flex gap-1.5" aria-label={`Step ${step} of ${TOTAL_STEPS}`}><div className="h-1.5 flex-1 rounded-full bg-white/10"><div className="h-full rounded-full bg-gradient-to-r from-[#f35ca8] via-[#ff8b4d] to-[#ffd166] transition-all duration-300" style={{ width: `${(step / TOTAL_STEPS) * 100}%` }} /></div><div className="hidden gap-1 sm:flex">{Array.from({ length: TOTAL_STEPS }, (_, index) => <span key={index} className={`h-1.5 w-1.5 rounded-full ${index + 1 <= step ? "bg-[#ffd166]" : "bg-white/15"}`} />)}</div></div>
@@ -158,7 +200,7 @@ export default function Onboarding() {
           <div className="min-h-[330px] p-5 sm:p-7">
             {step === 1 && <div className="flex flex-col items-center gap-5"><div className="flex h-36 w-36 items-center justify-center overflow-hidden rounded-[38px] border-2 border-dashed border-[#f35ca8]/70 bg-white/[0.04] text-6xl shadow-[0_16px_35px_rgba(232,69,155,.15)]">{isImageSrc(photo) ? <img src={photo} alt="Your avatar preview" className="h-full w-full object-cover" /> : <span>{photo}</span>}</div><label className="cursor-pointer rounded-full bg-[#211952] px-5 py-3 text-xs font-bold text-white transition hover:bg-[#2c2561]">{uploading ? "Compressing & uploading…" : "📷 Upload a photo"}<input type="file" accept="image/*" onChange={handleFileUpload} disabled={uploading} className="hidden" /></label>{uploadSuccess && <span className="-mt-3 text-[11px] font-semibold text-[#73f4df]">✓ Photo attached</span>}{uploadError && <span className="-mt-3 text-[11px] font-medium text-red-300">{uploadError}</span>}<div className="w-full max-w-sm"><p className="mb-3 text-center text-xs text-[#aaa8d0]">Or choose a festival avatar</p><div className="flex flex-wrap justify-center gap-2">{AVATAR_EMOJIS.map((emoji) => <button key={emoji} type="button" onClick={() => setPhoto(emoji)} aria-label={`Choose ${emoji} avatar`} className={`flex h-11 w-11 items-center justify-center rounded-2xl border text-2xl transition ${photo === emoji ? "scale-110 border-[#ffd166] bg-[#ffd166]/20" : "border-white/10 bg-white/[0.04] hover:border-white/30"}`}>{emoji}</button>)}</div></div></div>}
 
-            {step === 2 && <div className="mx-auto max-w-md pt-8"><label htmlFor="first-name" className="text-xs font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Your first name or nickname</label><input id="first-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} maxLength={40} autoComplete="given-name" className="mt-3 w-full rounded-2xl border border-white/10 bg-[#100a2c] px-4 py-4 text-lg font-semibold text-white outline-none transition focus:border-[#ffd166]" placeholder="e.g. Aditya" /><p className="mt-2 text-[11px] text-[#73789e]">This is the name your matches will see.</p></div>}
+            {step === 2 && <div className="mx-auto max-w-md pt-8"><label htmlFor="first-name" className="text-xs font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">{identityName ? "Verified Google name" : "Your first name or nickname"}</label><input id="first-name" value={firstName} onChange={(e) => setFirstName(e.target.value)} readOnly={identityNameLoading || Boolean(identityName)} aria-readonly={identityNameLoading || Boolean(identityName)} maxLength={40} autoComplete="given-name" className={`mt-3 w-full rounded-2xl border border-white/10 bg-[#100a2c] px-4 py-4 text-lg font-semibold text-white outline-none transition focus:border-[#ffd166] ${identityNameLoading || identityName ? "cursor-not-allowed opacity-80" : ""}`} placeholder="e.g. Aditya" /><p className="mt-2 text-[11px] text-[#73789e]">{identityName ? "Fetched from your Google account and kept fixed for authenticity." : identityNameLoading ? "Checking your verified account name…" : "This is the name your matches will see."}</p></div>}
 
             {step === 3 && <div className="mx-auto max-w-md pt-8"><label htmlFor="age" className="text-xs font-bold uppercase tracking-[0.16em] text-[#aaa8d0]">Your age</label><div className="mt-3 flex items-center gap-3"><input id="age" type="text" inputMode="numeric" pattern="[0-9]*" autoComplete="off" value={age} aria-describedby="age-help" aria-invalid={!!formError} onChange={(e) => { if (/^\d*$/.test(e.target.value)) { setAge(e.target.value); setFormError(null); } }} className="w-full rounded-2xl border border-white/10 bg-[#100a2c] px-4 py-4 text-2xl font-bold text-white outline-none transition focus:border-[#ffd166]" /><span className="text-sm text-[#aaa8d0]">years</span></div><p id="age-help" className="mt-3 text-[11px] text-[#73789e]">You must be 18 or older to use GarbaMate.</p></div>}
 

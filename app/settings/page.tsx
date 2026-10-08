@@ -44,11 +44,18 @@ export default function Settings() {
     }
   };
 
-  const handleDeleteAccount = async () => {
-    if (confirm("Are you sure you want to delete your profile? This action is irreversible.")) {
-      await signOut();
-      router.push("/");
-    }
+  const clearLocalAccountCaches = () => {
+    try {
+      const keys = Object.keys(localStorage).filter((key) => key === "garbamate_likes" || key === "garbamate_passes" || key === "garbamate_matches" || key === "garbamate_messages" || key.startsWith("garbamate_cached_incoming_") || key.startsWith("garbamate_user_notifs_") || key.startsWith("garbamate_notif_event_"));
+      keys.forEach((key) => localStorage.removeItem(key));
+    } catch { /* optional browser cache */ }
+  };
+
+  const handleSignOut = async () => {
+    await signOut();
+    clearLocalAccountCaches();
+    router.replace("/");
+    router.refresh();
   };
 
   return (
@@ -74,10 +81,10 @@ export default function Settings() {
             </div>
           </Card>
 
-          <Card className="p-0">
-            <div className="border-b border-white/10 p-5 sm:p-6"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">Profile & account</p><h2 className="display-font mt-1 text-xl font-bold text-white">Keep your details fresh</h2></div>
-            <div className="space-y-2 p-5 sm:p-6"><Link href="/onboarding" className="block"><Button variant="secondary" className="w-full justify-between px-4 text-xs">Edit full profile details <span aria-hidden="true">→</span></Button></Link><Button variant="ghost" onClick={() => signOut()} className="w-full text-xs text-[#ffd166]">Sign out</Button><button type="button" onClick={handleDeleteAccount} className="w-full rounded-full px-4 py-3 text-center text-xs font-semibold text-red-300 transition hover:bg-red-500/10 hover:text-red-200">Delete account & data</button></div>
-          </Card>
+           <Card className="p-0">
+             <div className="border-b border-white/10 p-5 sm:p-6"><p className="text-[10px] font-bold uppercase tracking-[0.16em] text-[#ffd166]">Profile & account</p><h2 className="display-font mt-1 text-xl font-bold text-white">Keep your details fresh</h2></div>
+             <div className="space-y-2 p-5 sm:p-6"><Link href="/onboarding?edit=1" className="block"><Button variant="secondary" className="w-full justify-between px-4 text-xs">Edit full profile details <span aria-hidden="true">→</span></Button></Link><Button variant="ghost" onClick={() => void handleSignOut()} className="w-full text-xs text-[#ffd166]">Sign out</Button></div>
+           </Card>
 
           <Card><div className="flex items-center justify-between gap-4"><div><h2 className="text-sm font-bold">Read receipts</h2><p className="mt-1 text-xs leading-5 text-[#aaa8d0]">When off, you won’t send read receipts or see blue ticks on your messages. Delivery ticks stay on.</p></div><button type="button" role="switch" aria-label="Read receipts" aria-checked={profile?.read_receipts_enabled !== false} disabled={!user || receiptsBusy} onClick={() => void toggleReceipts(profile?.read_receipts_enabled === false)} className={`flex min-h-11 w-14 shrink-0 items-center rounded-full border p-1 focus-visible:outline-2 focus-visible:outline-[#ffd166] ${profile?.read_receipts_enabled !== false ? "border-[#f35ca8] bg-[#f35ca8]" : "border-white/20 bg-white/10"}`}><span className={`h-6 w-6 rounded-full bg-white transition-transform ${profile?.read_receipts_enabled !== false ? "translate-x-6" : "translate-x-0"}`} /></button></div>{receiptsError && <p role="alert" className="mt-3 text-xs text-rose-200">{receiptsError}</p>}</Card>
 

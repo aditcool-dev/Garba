@@ -5,7 +5,7 @@ import Onboarding from "../app/onboarding/page";
 
 const mocks = vi.hoisted(() => ({ save: vi.fn(), refresh: vi.fn(), replace: vi.fn(), getUser: vi.fn() }));
 const account = { id: "00000000-0000-4000-8000-000000000001", email: "student.cs24@bmsce.ac.in", email_confirmed_at: "2026-10-07T12:00:00Z", app_metadata: {} };
-vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: mocks.replace }) }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: mocks.replace }), useSearchParams: () => new URLSearchParams() }));
 vi.mock("../components/app-shell", () => ({ AppShell: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock("../lib/supabase/auth-context", () => ({ useAuth: () => ({ user: account, profile: { first_name: "Student", age: 18, looking_for: [], available_nights: [] }, refreshProfile: mocks.refresh }) }));
 vi.mock("../lib/supabase/client", () => ({ db: { upsertProfile: mocks.save }, getSupabaseClient: () => ({ auth: { getUser: mocks.getUser } }) }));
@@ -55,5 +55,13 @@ describe("real onboarding controls and authenticated submission", () => {
     fireEvent.click(screen.getByRole("button", { name: "Start discovering →" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toBe("Database temporarily unavailable"));
     expect((screen.getByRole("button", { name: "Start discovering →" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+  it("keeps a reliable Google identity name read-only", async () => {
+    mocks.getUser.mockResolvedValue({ data: { user: { ...account, app_metadata: { provider: "google" }, user_metadata: { full_name: "Adit Rastogi" } } }, error: null });
+    render(<Onboarding />);
+    next();
+    const input = await screen.findByLabelText("Verified Google name") as HTMLInputElement;
+    await waitFor(() => expect(input.value).toBe("Adit Rastogi"));
+    expect(input.readOnly).toBe(true);
   });
 });
